@@ -2,8 +2,10 @@
 
 ## v1.4.0 — 2026-10-26 06:23 HST
 
-- Added: the bank balance is saved in the browser: VISIT BANK saves it on every deposit and withdraw, and the game saves it again when it ends. When a game ends, what is in the bank carries into the next game, up to $5000 (anything over $5000 is dropped).
-- Removed: the bank always starting at $0 on every new game.
+- Added: the bank is saved on a server (the moba-beat database, table `drugwars_banks`, see `migrations/001_banks.sql`). The first time you play, your browser gets an 8-digit bank code. The balance carries into your next game, up to $5000. VISIT BANK saves it on every deposit and withdraw, and the game saves it again when it ends.
+- Added: a CODE item in VISIT BANK. It shows your code and lets you type another one, which loads that bank. This is how the bank follows you to another device.
+- Added: a small Worker (`src/worker.js`) for the bank, and the database binding in `wrangler.jsonc`.
+- Removed: the bank starting at $0 on every new game. The page is no longer served alone: `wrangler.jsonc` now sends `/api/*` to the Worker.
 
 ## v1.3.2 — 2026-10-26 06:06 HST
 
