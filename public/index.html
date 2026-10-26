@@ -21,6 +21,9 @@ body{background:var(--room);color:var(--fg);font-family:var(--sans);
   box-shadow:0 18px 40px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.08)}
 .window{background:var(--face);border-radius:10px;padding:8px 16px 18px}
 .brand{display:flex;justify-content:flex-end;margin:0 0 8px;font:italic 700 18px/1 var(--sans);color:var(--gold);letter-spacing:.04em}
+.lcdbox{position:relative}
+#sel{position:absolute;left:0;margin:0;color:transparent;font-family:monospace;white-space:pre;-webkit-user-select:all;user-select:all;cursor:text;display:none}
+#sel::selection{background:rgba(31,37,25,.35)}
 canvas{display:block;width:100%;max-width:100%;aspect-ratio:3/2;background:var(--lcd);
   image-rendering:pixelated;box-shadow:inset 0 2px 6px rgba(0,0,0,.35)}
 .keys{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;display:grid;grid-template-columns:repeat(5,1fr);column-gap:8px;row-gap:4px;margin-top:12px}
@@ -46,11 +49,11 @@ button:focus-visible{outline:2px solid var(--second);outline-offset:2px}
 <div class="calc">
   <div class="window">
     <div class="brand">DW-82</div>
-    <canvas id="lcd" width="384" height="256" aria-label="Calculator screen"></canvas>
+    <div class="lcdbox"><canvas id="lcd" width="384" height="256" aria-label="Calculator screen"></canvas><div id="sel"></div></div>
   </div>
   <div class="keys" id="keys"></div>
 </div>
-<p class="hint">v1.4.0</p>
+<p class="hint">v1.5.0</p>
 <script>
 // ---------- 5x7 font, 7 rows of 5 bits per glyph (hex) ----------
 const FONT={A:"0E11111F111111",B:"1E11111E11111E",C:"0E11101010110E",D:"1C12111111121C",E:"1F10101E10101F",
@@ -151,6 +154,12 @@ function wrap(text,w=COLS){
   }
   return out;
 }
+function copyable(row,text){ // an invisible, selectable copy of text over LCD row `row`, so it can be copied
+  const el=document.getElementById('sel'),w=cv.clientWidth/COLS,h=cv.clientHeight/ROWS,fs=h*.8;
+  el.textContent=text; el.style.cssText=`display:block;top:${row*h}px;height:${h}px;line-height:${h}px;font-size:${fs}px;letter-spacing:${w-fs*.6}px`;
+  getSelection().removeAllRanges();
+}
+const uncopyable=()=>{document.getElementById('sel').style.display='none'};
 async function say(text){ // like Disp + Pause
   const lines=wrap(text,15);
   for(let i=0;i<lines.length;i+=ROWS-1){
@@ -298,17 +307,44 @@ async function newDay(){
 }
 
 const priceItems=()=>DRUGS.map((d,i)=>d.padEnd(8)+String(g.pr[i]).padStart(6));
+const dealItems=ds=>ds.map(d=>(d.mine?'*':'')+d.units+' '+DRUGS[d.drug].slice(0,4)+' $'+d.price);
 
+async function buyDeal(){
+  const r=await api('/api/deals?city='+g.loc+'&code='+getCode());
+  if(!r||!r.deals.length) return say('NO DEALS HERE.');
+  const i=await pick(['PLAYER DEALS'],dealItems(r.deals),{title:true,cancel:true}); if(i<0) return;
+  const d=r.deals[i]; if(d.mine) return;
+  const afford=int(g.Z/d.price), max=Math.min(afford,free(),d.units);
+  const n=await askNum(['YOU CAN BUY:',String(max).padStart(COLS),'HOW MUCH?'],max);
+  if(!n||n>max) return;
+  const b=await api('/api/deals/buy',{code:getCode(),id:d.id,units:n});
+  if(!b) return say('TOO LATE.');
+  g.st[d.drug]+=n; g.Z-=n*b.price;
+}
 async function buy(){
-  const i=await pick(['WHAT TO BUY?'],priceItems(),{title:true,cancel:true}); if(i<0) return;
+  const i=await pick(['WHAT TO BUY?'],[...priceItems(),'PLAYER DEALS'],{title:true,cancel:true}); if(i<0) return;
+  if(i===6) return buyDeal();
   const afford=int(g.Z/g.pr[i]);
   const n=await askNum(['YOU CAN AFFORD:',String(afford).padStart(COLS),'YOU CAN HOLD:',String(free()).padStart(COLS),'HOW MUCH?'],Math.min(afford,free()));
   if(!n) return;
   if(n>afford||n>free()) return;
   g.st[i]+=n; g.Z-=n*g.pr[i];
 }
+async function postDeal(){
+  const have=DRUGS.map((d,i)=>i).filter(i=>g.st[i]>0);
+  if(!have.length) return;
+  const k=await pick(['DEAL WHICH?'],have.map(i=>DRUGS[i].padEnd(8)+String(g.st[i]).padStart(6)),{title:true,cancel:true}); if(k<0) return;
+  const i=have[k];
+  const n=await askNum(['YOU HAVE:',String(g.st[i]).padStart(COLS),'HOW MUCH?'],Math.min(g.st[i],100));
+  if(!n||n>g.st[i]||n>100) return;
+  const pr=await askNum(['PRICE EACH?'],null);
+  if(!pr) return;
+  if(!await api('/api/deals',{code:getCode(),city:g.loc,drug:i,units:n,price:pr})) return say('NO DEAL.');
+  g.st[i]-=n;
+}
 async function sell(){
-  const i=await pick(['WHAT TO SELL?'],priceItems(),{title:true,cancel:true}); if(i<0) return;
+  const i=await pick(['WHAT TO SELL?'],[...priceItems(),'POST A DEAL'],{title:true,cancel:true}); if(i<0) return;
+  if(i===6) return postDeal();
   const n=await askNum(['YOU HAVE:',String(g.st[i]).padStart(COLS),'HOW MUCH?'],g.st[i]);
   if(!n) return;
   if(n>g.st[i]) return;
@@ -324,12 +360,14 @@ async function loanShark(){
 }
 async function bank(){
   if(g.loc!==0) return say("THE BANK IS IN THE BRONX.");
+  const paid=(await api('/api/bank/claim',{code:getCode()}))?.owed||0;
+  if(paid){g.V+=paid; await saveBank(g.V); await say(`YOUR DEALS PAID YOU $${paid}`)}
   for(;;){
-    const c=await pick([' BANK '],['VIEW ACCOUNT','DEPOSIT','WITHDRAW','CODE','GOODBYE'],{title:true,cancel:true});
-    if(c<0||c===4) return;
+    const c=await pick([' BANK '],['VIEW ACCOUNT','DEPOSIT','WITHDRAW','CODE'],{title:true,cancel:true});
+    if(c<0) return;
     if(c===0){await say(`BALANCE: $${g.V}`);continue}
     if(c===3){
-      await say(`YOUR BANK CODE:\n${getCode()}`);
+      copyable(1,getCode()); await say(`YOUR BANK CODE:\n${getCode()}`); uncopyable();
       if(!await yesNo('USE ANOTHER CODE?')) continue;
       const n=await askNum(['ENTER THE CODE:'],null); if(n===null) continue;
       const r=await api('/api/bank?code='+n);

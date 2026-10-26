@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.5.0 — 2026-10-26 06:39 HST
+
+- Added: player deals. SELL has a 7th item, POST A DEAL: pick a drug you hold, how many (up to 100) and the price each. Those units leave your coat and the deal stays up in that city for a day. A deal nobody buys is lost with its units. BUY has a 7th item, PLAYER DEALS: the deals up in the city you're in (up to 6, yours marked with *); pick one and how many. You can't buy your own. Limits: 1 to 100 units at 1 to 150000 each, 5 deals up at once. Server: `src/worker.js`, tables in `migrations/002_deals.sql`.
+- Added: cash from your sold deals waits for you in VISIT BANK; when you open it, it's added to your balance and the screen says "YOUR DEALS PAID YOU $...".
+- Added: the bank code can be selected and copied (an invisible copy of the code sits over the screen while it's showing).
+- Changed: the bank carries up to $50000 into the next game, up from $5000.
+- Removed: the GOODBYE item in VISIT BANK (back/clear/left still leave it), and the $5000 carry limit.
+
 ## v1.4.0 — 2026-10-26 06:23 HST
 
 - Added: the bank is saved on a server (the moba-beat database, table `drugwars_banks`, see `migrations/001_banks.sql`). The first time you play, your browser gets an 8-digit bank code. The balance carries into your next game, up to $5000. VISIT BANK saves it on every deposit and withdraw, and the game saves it again when it ends.
