@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.4.0 — 2026-10-26 06:23 HST
+
+- Added: the bank balance is saved in the browser: VISIT BANK saves it on every deposit and withdraw, and the game saves it again when it ends. When a game ends, what is in the bank carries into the next game, up to $5000 (anything over $5000 is dropped).
+- Removed: the bank always starting at $0 on every new game.
+
 ## v1.3.2 — 2026-10-26 06:06 HST
 
 - Changed: the text on the calculator keys and the blue labels above them can no longer be selected.

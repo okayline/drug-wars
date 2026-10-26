@@ -50,7 +50,7 @@ button:focus-visible{outline:2px solid var(--second);outline-offset:2px}
   </div>
   <div class="keys" id="keys"></div>
 </div>
-<p class="hint">v1.3.2</p>
+<p class="hint">v1.4.0</p>
 <script>
 // ---------- 5x7 font, 7 rows of 5 bits per glyph (hex) ----------
 const FONT={A:"0E11111F111111",B:"1E11111E11111E",C:"0E11101010110E",D:"1C12111111121C",E:"1F10101E10101F",
@@ -204,6 +204,9 @@ const DRUGS=['COCAINE','HEROINE','ACID','WEED','SPEED','LUDES'];
 const PLACES=['BRONX','GHETTO','CENTRAL PARK','MANHATTEN','CONEY ISLAND','BROOKLYN'];
 const R=Math.random,round=Math.round,int=Math.floor;
 let g;
+const BANK_KEY='dw-bank',BANK_CAP=5000; // the bank balance carries into the next game, up to $5000
+const loadBank=()=>{try{return Math.max(0,Math.min(BANK_CAP,parseInt(localStorage.getItem(BANK_KEY),10)||0))}catch(e){return 0}};
+const saveBank=v=>{try{localStorage.setItem(BANK_KEY,String(Math.min(BANK_CAP,v)))}catch(e){}};
 const carried=()=>g.st.reduce((a,b)=>a+b,0);
 const free=()=>g.T-carried();
 
@@ -316,11 +319,12 @@ async function bank(){
     const n=await askNum([`BALANCE: $${g.V}`,`CASH: $${g.Z}`,'HOW MUCH?'],c===1?g.Z:g.V); if(n===null) continue;
     if(c===1){ if(n>g.Z) continue; g.V+=n; g.Z-=n }
     else { if(n>g.V) continue; g.V-=n; g.Z+=n }
+    saveBank(g.V);
   }
 }
 
 async function game(){
-  g={Z:2000,Y:5000,V:0,T:100,B:1,I:0,J:0,st:[0,0,0,0,0,0],pr:[],loc:0};
+  g={Z:2000,Y:5000,V:loadBank(),T:100,B:1,I:0,J:0,st:[0,0,0,0,0,0],pr:[],loc:0};
   await say("J.M.'S DRUGWAR\nVERSION 2.00\n\nJUST SAY NO.");
   let dead=(await newDay())==='dead';
   while(!dead){
@@ -339,6 +343,7 @@ async function game(){
     else if(c===5) await loanShark();
     else await bank();
   }
+  saveBank(g.V);
   const total=g.V+g.Z-g.Y;
   const score=total<=0?0:Math.min(100,round(Math.sqrt(total/31.5)));
   await show([' GAME OVER!','YOUR SCORE (ON A','SCALE OF 1 TO','100)=',String(score).padStart(COLS),`CASH $${g.Z}`,`BANK $${g.V}`,`DEBT $${g.Y}`]);
