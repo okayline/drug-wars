@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.0 — 2026-10-26 05:56 HST
+
+Back to a faithful adaptation.
+
+- Removed: the DEALERS menu item and everything behind it: the player deals, the server (`src/`), its tests, the database tables file and the deal ledger. The main menu is the original 7 items again, so the menu scrolling I added for the 8th item is gone too.
+- Changed: `wrangler.jsonc` is back to serving the page only, with no server and no database.
+- Not changed: the key bindings and amount shortcuts, the About pages, the TI-82 shell, the original wording.
+
 ## v1.2.3 — 2026-10-26 05:54 HST
 
 - Changed: ▶ now also works as ENTER and ◀ as back (the same as DEL) in menus, on message screens and in the About pages. While you type an amount they still add and take off 10.

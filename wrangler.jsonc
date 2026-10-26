@@ -1,20 +1,5 @@
 {
-  // Drugwar. The Worker's name must match the one in the Cloudflare dashboard.
   "name": "drug-wars",
-  "main": "src/worker.js",
   "compatibility_date": "2026-10-26",
-  // the page (public/). /api/* goes to the Worker code first.
-  "assets": {
-    "directory": "public",
-    "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
-  },
-  // The dealers' tables live in the moba-beat database; every one of them is named drugwars_...
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "moba-beat",
-      "database_id": "8ced4f17-0ae0-4852-b02c-5003d7f08c5d"
-    }
-  ]
+  "assets": { "directory": "./public" }
 }
