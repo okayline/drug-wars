@@ -1,85 +1,35 @@
-# Changelog
+# Drugwar changelog
 
-## v1.5.0 — 2026-10-26 06:39 HST
+Newest first. Full details are kept privately.
 
-- Added: player deals. SELL has a 7th item, POST A DEAL: pick a drug you hold, how many (up to 100) and the price each. Those units leave your coat and the deal stays up in that city for a day. A deal nobody buys is lost with its units. BUY has a 7th item, PLAYER DEALS: the deals up in the city you're in (up to 6, yours marked with *); pick one and how many. You can't buy your own. Limits: 1 to 100 units at 1 to 150000 each, 5 deals up at once. Server: `src/worker.js`, tables in `migrations/002_deals.sql`.
-- Added: cash from your sold deals waits for you in VISIT BANK; when you open it, it's added to your balance and the screen says "YOUR DEALS PAID YOU $...".
-- Added: the bank code can be selected and copied (an invisible copy of the code sits over the screen while it's showing).
-- Changed: the bank carries up to $50000 into the next game, up from $5000.
-- Removed: the GOODBYE item in VISIT BANK (back/clear/left still leave it), and the $5000 carry limit.
+## v1.5.0 (Oct 26)
+- Added: you can post your own deals in SELL, and see other players' deals in BUY. Money from your sales waits for you in VISIT BANK.
+- Added: you can copy your bank code.
+- Changed: your bank carries up to $50,000 into your next game.
+- Removed: GOODBYE in VISIT BANK (use back instead).
 
-## v1.4.0 — 2026-10-26 06:23 HST
+## v1.4.0 (Oct 26)
+- Added: your bank is saved between games. You get a bank code, and CODE in VISIT BANK lets you use it on another device.
+- Removed: the bank starting empty every game.
 
-- Added: the bank is saved on a server (the moba-beat database, table `drugwars_banks`, see `migrations/001_banks.sql`). The first time you play, your browser gets an 8-digit bank code. The balance carries into your next game, up to $5000. VISIT BANK saves it on every deposit and withdraw, and the game saves it again when it ends.
-- Added: a CODE item in VISIT BANK. It shows your code and lets you type another one, which loads that bank. This is how the bank follows you to another device.
-- Added: a small Worker (`src/worker.js`) for the bank, and the database binding in `wrangler.jsonc`.
-- Removed: the bank starting at $0 on every new game. The page is no longer served alone: `wrangler.jsonc` now sends `/api/*` to the Worker.
+## v1.3.2 (Oct 26)
+- Changed: the text on the calculator keys can't be selected anymore.
 
-## v1.3.2 — 2026-10-26 06:06 HST
+## v1.3.1 (Oct 26)
+- Fixed: some symbols on the keys showed up garbled.
+- Changed: the About page is one short page.
+- Removed: the extra About pages.
 
-- Changed: the text on the calculator keys and the blue labels above them can no longer be selected.
-- Removed: nothing.
+## v1.3.0 (Oct 26)
+- Removed: the player deals from v1.2.0, to stay close to the original game. (They come back in v1.5.0.)
 
-## v1.3.1 — 2026-10-26 06:03 HST
+## v1.2 (Oct 26)
+- Added: player deals.
+- Changed: events and chases use the original wording.
+- Removed: messages that weren't in the original.
 
-- Fixed: the arrow keys, −100 and θ showed as garbled characters on dw.88x31.app. The page now says it is UTF-8.
-- Removed: About pages 2 (GOAL) and 3 (TIPS). Only the first page is left.
-- Changed: About page 1 now reads "DRUGWAR v2.00 / A CLONE OF THE OLD TI-82 GAME / BUY LOW. SELL HIGH. END RICH." (your wording). The old text, including its "v1.1" and "YOU HAVE 30 DAYS.", is gone.
+## v1.1 (Oct 26)
+- Added: an About page (WINDOW key).
 
-## v1.3.0 — 2026-10-26 05:56 HST
-
-Back to a faithful adaptation.
-
-- Removed: the DEALERS menu item and everything behind it: the player deals, the server (`src/`), its tests, the database tables file and the deal ledger. The main menu is the original 7 items again, so the menu scrolling I added for the 8th item is gone too.
-- Changed: `wrangler.jsonc` is back to serving the page only, with no server and no database.
-- Not changed: the key bindings and amount shortcuts, the About pages, the TI-82 shell, the original wording.
-
-## v1.2.3 — 2026-10-26 05:54 HST
-
-- Changed: ▶ now also works as ENTER and ◀ as back (the same as DEL) in menus, on message screens and in the About pages. While you type an amount they still add and take off 10.
-- Removed: nothing.
-
-## v1.2.2 — 2026-10-26 05:49 HST
-
-- Removed: the small lines I wrote that the original doesn't show: "YOU CAN'T AFFORD THAT MUCH!", "YOU CAN'T HOLD THAT MUCH!", "YOU DON'T HAVE THAT MUCH!" (buy, sell, bank), "YOU CAN'T DO THAT, MAN!" (loan). A number that's too big now just returns you to the menu. Also removed my second intro screen ("PAY OFF THE LOAN SHARK, THEN MAKE AS MUCH MONEY...") and the plain placeholder prompts from v1.2.1.
-- Changed: every event, offer and chase message now uses the original's wording (read from the TI-BASIC source through a summary, not the raw file): the events 3 to 8, 14, 15, 16 and 17, the gun, weed and trenchcoat offers, the Hardass chase (including THEY'RE FIRING AT YOU!!, the pig, gun and dammage views), and the doctor offer.
-- Added: the chase line THEY'RE FIRING AT YOU!!, which is in the original.
-- Not changed: the DEALERS menu and its messages (new in v1.2.0), the About pages, and the key bindings.
-
-## v1.2.1 — 2026-10-26 05:47 HST
-
-- Removed: the 10 event and chase messages I wrote myself (not from the original): the heroin cheap/expensive messages, the coke bust, the subway mugging, the dead-dude find, the acid flood (these events now happen with no message), the paraquat weed wording and train-death story, the Hardass intro, "YOU'VE BEEN HIT!!", the "killed all of them / carcass" line.
-- Changed: the offers and the chase now use bare plain prompts: "BUY A [gun] FOR $400?", "SMOKE SOME WEED?", "YOU DIED.", "BUY A TRENCHCOAT FOR $200?", "[n] PIGS ARE CHASING YOU.", "YOU'RE HIT.", "YOU GOT $[n].", "PAY $1000 FOR A DOCTOR?". The two event messages and the chase lines that came from the original are unchanged.
-
-## v1.2.0 — 2026-10-26 05:38 HST
-
-Player dealing.
-
-- Added: DEALERS on the main menu (8th item; the menu now scrolls). SEE DEALS lists the deals other players have put up in the city you're in and lets you buy; POST A DEAL puts some of your stash up at your own price. A deal is up the moment you post it and stays up for a day.
-- Added: cash from your deals that sold comes back to the same game, on your next JET (and counts toward the final score). It never goes to a different game.
-- Added: a small server (`src/worker.js`) with 4 routes (`/api/market`, `/api/list`, `/api/buy`, `/api/claim`), tables `drugwars_*` in the moba-beat database (`migrations/001_dealers.sql`), and a hash-chained ledger of every finished deal (`src/ledger.js`). Players are a cookie, no names. `npm test` (5 tests, no dependencies).
-- Limits: a deal is 1 to 100 units at 1 to 150000 each; 5 deals up at once per player; you can't buy your own deal.
-- Changed: `wrangler.jsonc` now runs the Worker (assets are served by it; `/api/*` goes to the Worker first) and binds the moba-beat database.
-- Removed: nothing. The solo game is unchanged, and without the server the DEALERS menu just says the dealers can't be reached.
-
-## v1.1.1 — 2026-10-26 05:28 HST
-
-- Added: `wrangler.jsonc` so Cloudflare serves the game (the `drug-wars` Worker was only showing "Hello world").
-- Changed: `index.html` moved to `public/index.html`.
-- Removed: nothing.
-
-## v1.1 — 2026-10-26 05:24 HST
-
-- Added: WINDOW key opens a 3-page About screen on the LCD in the game's pixel font (what the game is, the goal, tips). ENTER or WINDOW pages through; MODE or DEL closes it and returns to where you were.
-- Changed: the blue label above WINDOW says "About" instead of "TblSet"; the version under the calculator says v1.1.
-- Removed: nothing.
-
-## v1.0 — 2026-10-26 05:20 HST
-
-First release.
-
-- Added: Drugwar clone, one HTML page (`index.html`), single player. Rules and numbers come from the TI-82/83 BASIC "J.M.'S DRUGWAR 2.00": 30 days, $2000 cash, $5000 loan shark debt, 100-space trenchcoat, 6 drugs, 6 places, 10%/day loan interest, 6%/day bank interest, Officer Hardass chases, random events, score 1–100.
-- Added: TI-82-style calculator shell (labelled "DW-82", no brand name or logo) with a 96×64 pixel LCD and 5×7 pixel font.
-- Added: key bindings — 2nd = ENTER, MODE = CLEAR, DEL = back/erase, ALPHA = +100, X,T,θ = −100, STAT = MAX, ▲▼ = menu cursor or ±1, ◀▶ = ±10. Blue labels above each key say what it does. Keyboard also works (0–9, Enter, Esc, Backspace, arrows).
-- Changed from the original: buy/sell pick the drug from a menu instead of typing its price; game starts in the Bronx; some event messages are reworded (heroin/coke price events, chase intro) because the exact originals weren't readable.
-- Removed: keypad rows from MATH/MATRX down (number keys, ENTER, CLEAR and the rest) — their jobs moved to the keys above. Removed the explainer text under the calculator; it now shows the version number.
+## v1.0 (Oct 26)
+- First version: a calculator-style Drugwar. 30 days, 6 drugs, 6 places, a loan shark, a bank, random events and police chases.
