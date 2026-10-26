@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.1 — 2026-10-26 06:03 HST
+
+- Fixed: the arrow keys, −100 and θ showed as garbled characters on dw.88x31.app. The page now says it is UTF-8.
+- Removed: About pages 2 (GOAL) and 3 (TIPS). Only the first page is left.
+- Changed: About page 1 now reads "DRUGWAR v2.00 / A CLONE OF THE OLD TI-82 GAME / BUY LOW. SELL HIGH. END RICH." (your wording). The old text, including its "v1.1" and "YOU HAVE 30 DAYS.", is gone.
+
 ## v1.3.0 — 2026-10-26 05:56 HST
 
 Back to a faithful adaptation.
