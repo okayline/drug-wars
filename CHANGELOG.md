@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.2.2 — 2026-10-26 05:49 HST
+
+- Removed: the small lines I wrote that the original doesn't show: "YOU CAN'T AFFORD THAT MUCH!", "YOU CAN'T HOLD THAT MUCH!", "YOU DON'T HAVE THAT MUCH!" (buy, sell, bank), "YOU CAN'T DO THAT, MAN!" (loan). A number that's too big now just returns you to the menu. Also removed my second intro screen ("PAY OFF THE LOAN SHARK, THEN MAKE AS MUCH MONEY...") and the plain placeholder prompts from v1.2.1.
+- Changed: every event, offer and chase message now uses the original's wording (read from the TI-BASIC source through a summary, not the raw file): the events 3 to 8, 14, 15, 16 and 17, the gun, weed and trenchcoat offers, the Hardass chase (including THEY'RE FIRING AT YOU!!, the pig, gun and dammage views), and the doctor offer.
+- Added: the chase line THEY'RE FIRING AT YOU!!, which is in the original.
+- Not changed: the DEALERS menu and its messages (new in v1.2.0), the About pages, and the key bindings.
+
 ## v1.2.1 — 2026-10-26 05:47 HST
 
 - Removed: the 10 event and chase messages I wrote myself (not from the original): the heroin cheap/expensive messages, the coke bust, the subway mugging, the dead-dude find, the acid flood (these events now happen with no message), the paraquat weed wording and train-death story, the Hardass intro, "YOU'VE BEEN HIT!!", the "killed all of them / carcass" line.

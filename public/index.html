@@ -49,7 +49,7 @@ button:focus-visible{outline:2px solid var(--second);outline-offset:2px}
   </div>
   <div class="keys" id="keys"></div>
 </div>
-<p class="hint">v1.2.1</p>
+<p class="hint">v1.2.2</p>
 <script>
 // ---------- 5x7 font, 7 rows of 5 bits per glyph (hex) ----------
 const FONT={A:"0E11111F111111",B:"1E11111E11111E",C:"0E11101010110E",D:"1C12111111121C",E:"1F10101E10101F",
@@ -213,18 +213,19 @@ function rollPrices(){
 }
 
 async function chase(d){ // d = deputies; pigs = d+1
-  await say(`${d+1} PIGS ARE CHASING YOU.`);
+  await say(`OFFICER HARDASS AND ${d} OF HIS DEPPUTIES ARE AFTER YOU!`);
   const fire=async()=>{
+    await say("THEY'RE FIRING AT YOU!!");
     if(R()<.5){await say("THEY MISSED!!");return false}
-    g.J+=3; await say("YOU'RE HIT.");
+    g.J+=3; await say("YOU'VE BEEN HIT!");
     if(g.J>=50){await say("YOU'VE BEEN KILLED!!");return true}
     return false;
   };
   for(;;){
     const c=await pick(['BEING CHASED!!'],['VIEW GUNS','VIEW DAMMAGE','NUMBER OF PIGS','RUN','FIGHT'],{title:true});
-    if(c===0) await say(`GUNS: ${g.I}`);
-    else if(c===1) await say(`DAMMAGE: ${g.J}`);
-    else if(c===2) await say(`PIGS: ${d+1}`);
+    if(c===0) await say(`NUMBER OF GUNS\nYOU HAVE: ${g.I}`);
+    else if(c===1) await say(`YOUR DAMMAGE=${g.J}\n(50 DAMMAGE AND YOU DIE!)`);
+    else if(c===2) await say(`THERE ARE: ${d+1}\nPIGS STILL CHASING YOU!`);
     else if(c===3){
       if(R()<.5){await say("YOU LOST THEM IN AN ALLEY!!");return 'ok'}
       await say("YOU CAN'T SHAKE THEM!");
@@ -235,8 +236,8 @@ async function chase(d){ // d = deputies; pigs = d+1
         await say("YOU KILLED ONE!!"); d--;
         if(d<0){
           const cash=int(R()*1250+750); g.Z+=cash;
-          await say(`YOU GOT $${cash}.`);
-          if(g.Z>=1200&&g.J>0&&await yesNo('PAY $1000 FOR A DOCTOR?')){g.Z-=1000;g.J=0}
+          await say(`YOU KILLED ALL OF THEM!\n\nYOU FOUND ${cash} DOLLARS ON OFFICER HARDASS' CARCASS!!`);
+          if(g.Z>=1200&&g.J>0&&await yesNo('WILL YOU PAY 1000 DOLLARS FOR A DOCTOR TO SEW YOU UP?')){g.Z-=1000;g.J=0}
           return 'ok';
         }
       } else await say("YOU MISSED!!!");
@@ -251,32 +252,32 @@ async function newDay(){
   switch(D){
     case 1: g.pr[5]=2; await say("RIVAL DEALERS ARE SELLING CHEAP LUDES!!!"); break;
     case 2: g.pr[3]=122; await say("WEED PRICES HAVE BOTTOMED-OUT!!!"); break;
-    case 3: g.pr[1]=int(850+R()*1150); break;
-    case 4: case 5: g.pr[1]=int(18000+R()*25000); break;
-    case 6: case 7: g.pr[0]=int(80000+R()*60000); break;
-    case 8: g.Z=2*int(g.Z/3); break;
+    case 3: g.pr[1]=int(850+R()*1150); await say("PIGS ARE SELLING CHEAP HEROINE FROM LAST WEEK'S RAID!!!!"); break;
+    case 4: case 5: g.pr[1]=int(18000+R()*25000); await say("ADDICTS ARE BUYING HEROINE AT OUTRAGEOUS PRICES!!!"); break;
+    case 6: case 7: g.pr[0]=int(80000+R()*60000); await say("PIGS MADE A BIG COKE BUST! PRICES ARE OUTRAGEOUS!!!!"); break;
+    case 8: g.Z=2*int(g.Z/3); await say("YOU WERE MUGGED IN THE SUBWAY!"); break;
     case 9: case 10: case 11:
       if(carried()>=50) return await chase({9:1,10:3,11:4}[D]);
       break;
     case 12: case 13:
       if(g.Z>=500&&free()>=5){
         const gun=['BARRETTA','SATURDAY NIGHT SPECIAL','.44 MAGNUM'][int(R()*3)];
-        if(await yesNo(`BUY A ${gun} FOR $400?`)){g.I++;g.Z-=400;g.T-=5}
+        if(await yesNo(`WILL YOU BUY A ${gun} FOR 400 DOLLARS?`)){g.I++;g.Z-=400;g.T-=5}
       } break;
     case 14:
-      if(await yesNo("SMOKE SOME WEED?")){
-        await say("YOU DIED.");
+      if(await yesNo("THERE'S SOME WEED HERE THAT SMELLS LIKE GOOD STUFF!! WILL YOU SMOKE IT?")){
+        await say("YOU HALLUCINATE ON THE WILDEST TRIP OF YOUR LIFE, STUMBLE ON TO THE SUBWAY TRACKS AND GET CREAMED BY A TRAIN.\n\nJUST SAY NO TO DRUGS.");
         return 'dead';
       } break;
     case 15:
-      if(g.Z>=300&&await yesNo("BUY A TRENCHCOAT FOR $200?")){g.T+=10;g.Z-=200}
+      if(g.Z>=300&&await yesNo("WILL YOU BUY A NEW TRENCHCOAT WITH MORE POCKETS FOR 200 BUCKS?")){g.T+=10;g.Z-=200}
       break;
     case 16:
       if(free()>=8){
         const X=int(R()*7+1),i=[5,4,3,2,1][int(R()*5)];
-        g.st[i]+=X;
+        g.st[i]+=X; await say(`YOU FOUND: ${X} UNITS OF: ${DRUGS[i]} ON A DEAD DUDE IN THE SUBWAY!!!`);
       } break;
-    case 17: g.pr[2]=int(250+R()*550); break;
+    case 17: g.pr[2]=int(250+R()*550); await say("THE MARKET HAS BEEN FLOODED WITH CHEAP HOME-MADE ACID!!!!"); break;
   }
   return 'ok';
 }
@@ -288,15 +289,14 @@ async function buy(){
   const afford=int(g.Z/g.pr[i]);
   const n=await askNum(['YOU CAN AFFORD:',String(afford).padStart(COLS),'YOU CAN HOLD:',String(free()).padStart(COLS),'HOW MUCH?'],Math.min(afford,free()));
   if(!n) return;
-  if(n>afford) return say("YOU CAN'T AFFORD THAT MUCH!");
-  if(n>free()) return say("YOU CAN'T HOLD THAT MUCH!");
+  if(n>afford||n>free()) return;
   g.st[i]+=n; g.Z-=n*g.pr[i];
 }
 async function sell(){
   const i=await pick(['WHAT TO SELL?'],priceItems(),{title:true,cancel:true}); if(i<0) return;
   const n=await askNum(['YOU HAVE:',String(g.st[i]).padStart(COLS),'HOW MUCH?'],g.st[i]);
   if(!n) return;
-  if(n>g.st[i]) return say("YOU DON'T HAVE THAT MUCH!");
+  if(n>g.st[i]) return;
   g.st[i]-=n; g.Z+=n*g.pr[i];
 }
 async function loanShark(){
@@ -304,7 +304,7 @@ async function loanShark(){
   const c=await pick(['LOAN SHARK...'],['REPAY','BORROW'],{title:true,cancel:true}); if(c<0) return;
   const n=await askNum([`YOU OWE: $${g.Y}`,`CASH: $${g.Z}`,'HOW MUCH?'],c===0?Math.min(g.Z,g.Y):5000);
   if(n===null) return;
-  if(c===0){ if(n>g.Z||n>g.Y) return say("YOU CAN'T DO THAT, MAN!"); g.Y-=n; g.Z-=n }
+  if(c===0){ if(n>g.Z||n>g.Y) return; g.Y-=n; g.Z-=n }
   else { if(n>5000) return say("YOU THINK HE'S CRAZY, MAN?!"); g.Y+=n; g.Z+=n }
 }
 async function bank(){
@@ -314,8 +314,8 @@ async function bank(){
     if(c<0||c===3) return;
     if(c===0){await say(`BALANCE: $${g.V}`);continue}
     const n=await askNum([`BALANCE: $${g.V}`,`CASH: $${g.Z}`,'HOW MUCH?'],c===1?g.Z:g.V); if(n===null) continue;
-    if(c===1){ if(n>g.Z){await say("YOU DON'T HAVE THAT MUCH!");continue} g.V+=n; g.Z-=n }
-    else { if(n>g.V){await say("YOU DON'T HAVE THAT MUCH!");continue} g.V-=n; g.Z+=n }
+    if(c===1){ if(n>g.Z) continue; g.V+=n; g.Z-=n }
+    else { if(n>g.V) continue; g.V-=n; g.Z+=n }
   }
 }
 
@@ -386,7 +386,6 @@ async function game(){
   g={Z:2000,Y:5000,V:0,T:100,B:1,I:0,J:0,st:[0,0,0,0,0,0],pr:[],loc:0,posted:false};
   newRun();
   await say("J.M.'S DRUGWAR\nVERSION 2.00\n\nJUST SAY NO.");
-  await say("PAY OFF THE LOAN SHARK, THEN MAKE AS MUCH MONEY AS YOU CAN IN ONE MONTH.\n\nTHE LOAN SHARK AND THE BANK ARE IN THE BRONX.");
   let dead=(await newDay())==='dead';
   while(!dead){
     const c=await pick(['DRUGWAR!'],['SEE PRICES','TRENCHCOAT','BUY','SELL','JET','SEE LOAN SHARK','VISIT BANK','DEALERS'],{title:true});
