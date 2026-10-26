@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.1 — 2026-10-26 05:28 HST
+
+- Added: `wrangler.jsonc` so Cloudflare serves the game (the `drug-wars` Worker was only showing "Hello world").
+- Changed: `index.html` moved to `public/index.html`.
+- Removed: nothing.
+
 ## v1.1 — 2026-10-26 05:24 HST
 
 - Added: WINDOW key opens a 3-page About screen on the LCD in the game's pixel font (what the game is, the goal, tips). ENTER or WINDOW pages through; MODE or DEL closes it and returns to where you were.
