@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.2.0 — 2026-10-26 05:38 HST
+
+Player dealing.
+
+- Added: DEALERS on the main menu (8th item; the menu now scrolls). SEE DEALS lists the deals other players have put up in the city you're in and lets you buy; POST A DEAL puts some of your stash up at your own price. A deal is up the moment you post it and stays up for a day.
+- Added: cash from your deals that sold comes back to the same game, on your next JET (and counts toward the final score). It never goes to a different game.
+- Added: a small server (`src/worker.js`) with 4 routes (`/api/market`, `/api/list`, `/api/buy`, `/api/claim`), tables `drugwars_*` in the moba-beat database (`migrations/001_dealers.sql`), and a hash-chained ledger of every finished deal (`src/ledger.js`). Players are a cookie, no names. `npm test` (5 tests, no dependencies).
+- Limits: a deal is 1 to 100 units at 1 to 150000 each; 5 deals up at once per player; you can't buy your own deal.
+- Changed: `wrangler.jsonc` now runs the Worker (assets are served by it; `/api/*` goes to the Worker first) and binds the moba-beat database.
+- Removed: nothing. The solo game is unchanged, and without the server the DEALERS menu just says the dealers can't be reached.
+
 ## v1.1.1 — 2026-10-26 05:28 HST
 
 - Added: `wrangler.jsonc` so Cloudflare serves the game (the `drug-wars` Worker was only showing "Hello world").

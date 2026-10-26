@@ -49,7 +49,7 @@ button:focus-visible{outline:2px solid var(--second);outline-offset:2px}
   </div>
   <div class="keys" id="keys"></div>
 </div>
-<p class="hint">v1.1.1</p>
+<p class="hint">v1.2.0</p>
 <script>
 // ---------- 5x7 font, 7 rows of 5 bits per glyph (hex) ----------
 const FONT={A:"0E11111F111111",B:"1E11111E11111E",C:"0E11101010110E",D:"1C12111111121C",E:"1F10101E10101F",
@@ -164,12 +164,13 @@ async function show(lines,titled){ // full screen then Pause
   pauseInd=true; draw(); await waitKey(k=>(k==='enter'||k==='clear')?true:undefined); pauseInd=false;
 }
 function pick(head,items,{title=false,cancel=false}={}){ // like Menu(
-  let sel=0;
+  let sel=0,top=0;const vis=ROWS-head.length;
   const render=()=>{
+    if(sel<top) top=sel; if(sel>=top+vis) top=sel-vis+1;
     clr(); head.forEach((l,j)=>rows[j]=l);
     invs=title?[{r:0,c0:0,c1:COLS+1}]:[];
-    items.forEach((it,i)=>{rows[head.length+i]=(i+1)+':'+it});
-    invs.push({r:head.length+sel,c0:0,c1:2});
+    items.slice(top,top+vis).forEach((it,i)=>{rows[head.length+i]=(top+i+1)+':'+it});
+    invs.push({r:head.length+sel-top,c0:0,c1:2});
     draw();
   };
   render();
@@ -318,13 +319,77 @@ async function bank(){
   }
 }
 
+// ---------- the dealers: deals other players have put up (the server is src/worker.js) ----------
+const ABBR=['COC','HER','ACD','WED','SPD','LUD'];
+let runId=null; // this game's id: cash from deals you post comes back to this game and no other
+function newRun(){runId=[...crypto.getRandomValues(new Uint8Array(12))].map(b=>b.toString(16).padStart(2,'0')).join('')}
+async function api(path,body){ // { ok, d } or { ok:false, msg } (msg is null when the dealers can't be reached)
+  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),8000);
+  try{
+    const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined,signal:ctl.signal});
+    const d=await r.json().catch(()=>({}));
+    return r.ok&&!d.error?{ok:true,d}:{ok:false,msg:d.error||null};
+  }catch(e){return {ok:false,msg:null}}
+  finally{clearTimeout(to)}
+}
+const away=r=>say(r.msg||"THE DEALERS CAN'T BE REACHED RIGHT NOW.");
+async function collect(){ // cash from your deals that sold, once per trip
+  if(!g.posted) return;
+  const r=await api('/api/claim',{run:runId});
+  if(r.ok&&r.d.cash>0){g.Z+=r.d.cash;await say(`DEALERS PAID YOU $${r.d.cash} FOR ${r.d.deals} DEAL${r.d.deals>1?'S':''}!`)}
+}
+async function dealers(){
+  for(;;){
+    const c=await pick(['DEALERS'],['SEE DEALS','POST A DEAL'],{title:true,cancel:true});
+    if(c<0) return;
+    if(c===0) await seeDeals(); else await postDeal();
+  }
+}
+async function seeDeals(){
+  const r=await api('/api/market?city='+g.loc);
+  if(!r.ok) return away(r);
+  const L=r.d.listings;
+  if(!L.length) return say(`NO DEALS IN ${PLACES[g.loc]} RIGHT NOW.`);
+  const i=await pick([PLACES[g.loc]],L.map(l=>`${ABBR[l.drug]} ${l.units}@${l.price}`),{title:true,cancel:true});
+  if(i<0) return;
+  const l=L[i];
+  if(l.mine) return say("THAT'S YOUR OWN DEAL.");
+  const most=Math.min(l.units,int(g.Z/l.price),free());
+  if(most<1) return say(g.Z<l.price?"YOU CAN'T AFFORD ANY.":"YOUR COAT IS FULL.");
+  const n=await askNum([DRUGS[l.drug],`$${l.price} EACH`,'YOU CAN BUY:',String(most).padStart(COLS),'HOW MUCH?'],most);
+  if(!n) return;
+  if(n>most) return say("YOU CAN'T BUY THAT MANY.");
+  const b=await api('/api/buy',{listing:l.id,units:n});
+  if(!b.ok) return away(b);
+  g.st[l.drug]+=n; g.Z-=b.d.total;
+  await say(`YOU BOUGHT ${n} ${DRUGS[l.drug]} FOR $${b.d.total}.`);
+}
+async function postDeal(){
+  const held=DRUGS.map((d,i)=>i).filter(i=>g.st[i]>0);
+  if(!held.length) return say("YOU HAVE NOTHING TO SELL.");
+  const k=await pick(['POST WHICH?'],held.map(i=>DRUGS[i].padEnd(9)+String(g.st[i]).padStart(4)),{title:true,cancel:true});
+  if(k<0) return;
+  const i=held[k], most=Math.min(g.st[i],100);
+  const units=await askNum([DRUGS[i],'YOU HAVE:',String(g.st[i]).padStart(COLS),'HOW MANY?'],most);
+  if(!units) return;
+  if(units>most) return say("YOU CAN'T POST THAT MANY.");
+  const price=await askNum([DRUGS[i],`TODAY $${g.pr[i]}`,'PRICE EACH?'],150000);
+  if(!price) return;
+  if(price>150000) return say("THAT PRICE IS TOO HIGH.");
+  const r=await api('/api/list',{run:runId,city:g.loc,drug:i,units,price});
+  if(!r.ok) return away(r);
+  g.st[i]-=units; g.posted=true;
+  await say(`YOUR DEAL IS UP IN ${PLACES[g.loc]}!`);
+}
+
 async function game(){
-  g={Z:2000,Y:5000,V:0,T:100,B:1,I:0,J:0,st:[0,0,0,0,0,0],pr:[],loc:0};
+  g={Z:2000,Y:5000,V:0,T:100,B:1,I:0,J:0,st:[0,0,0,0,0,0],pr:[],loc:0,posted:false};
+  newRun();
   await say("J.M.'S DRUGWAR\nVERSION 2.00\n\nJUST SAY NO.");
   await say("PAY OFF THE LOAN SHARK, THEN MAKE AS MUCH MONEY AS YOU CAN IN ONE MONTH.\n\nTHE LOAN SHARK AND THE BANK ARE IN THE BRONX.");
   let dead=(await newDay())==='dead';
   while(!dead){
-    const c=await pick(['DRUGWAR!'],['SEE PRICES','TRENCHCOAT','BUY','SELL','JET','SEE LOAN SHARK','VISIT BANK'],{title:true});
+    const c=await pick(['DRUGWAR!'],['SEE PRICES','TRENCHCOAT','BUY','SELL','JET','SEE LOAN SHARK','VISIT BANK','DEALERS'],{title:true});
     if(c===0) await show([PLACES[g.loc],...DRUGS.map((d,i)=>d.padEnd(9)+('$'+g.pr[i]).padStart(7)),`DAY ${g.B}  $${g.Z}`],true);
     else if(c===1) await show(['TRENCHCOAT',...DRUGS.map((d,i)=>d.padEnd(9)+String(g.st[i]).padStart(7)),`GUNS ${g.I}  FREE ${free()}`],true);
     else if(c===2) await buy();
@@ -333,11 +398,13 @@ async function game(){
       const p=await pick(['WHERE TO, DUDE?'],[...PLACES,'OOPS... STAY!'],{title:true,cancel:true});
       if(p<0||p===6) continue;
       g.loc=p; g.B++; g.Y=int(g.Y*1.1); g.V=int(g.V*1.06);
+      await collect();
       if(g.B>=31) break;
       dead=(await newDay())==='dead';
     }
     else if(c===5) await loanShark();
-    else await bank();
+    else if(c===6) await bank();
+    else await dealers();
   }
   const total=g.V+g.Z-g.Y;
   const score=total<=0?0:Math.min(100,round(Math.sqrt(total/31.5)));
