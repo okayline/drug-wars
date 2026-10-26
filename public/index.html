@@ -49,7 +49,7 @@ button:focus-visible{outline:2px solid var(--second);outline-offset:2px}
   </div>
   <div class="keys" id="keys"></div>
 </div>
-<p class="hint">v1.2.0</p>
+<p class="hint">v1.2.1</p>
 <script>
 // ---------- 5x7 font, 7 rows of 5 bits per glyph (hex) ----------
 const FONT={A:"0E11111F111111",B:"1E11111E11111E",C:"0E11101010110E",D:"1C12111111121C",E:"1F10101E10101F",
@@ -213,10 +213,10 @@ function rollPrices(){
 }
 
 async function chase(d){ // d = deputies; pigs = d+1
-  await say(`OFFICER HARDASS AND ${d} OF HIS DEPUTIES ARE CHASING YOU!!`);
+  await say(`${d+1} PIGS ARE CHASING YOU.`);
   const fire=async()=>{
     if(R()<.5){await say("THEY MISSED!!");return false}
-    g.J+=3; await say("YOU'VE BEEN HIT!!");
+    g.J+=3; await say("YOU'RE HIT.");
     if(g.J>=50){await say("YOU'VE BEEN KILLED!!");return true}
     return false;
   };
@@ -235,8 +235,8 @@ async function chase(d){ // d = deputies; pigs = d+1
         await say("YOU KILLED ONE!!"); d--;
         if(d<0){
           const cash=int(R()*1250+750); g.Z+=cash;
-          await say(`YOU KILLED ALL OF THEM!!!\n\nYOU FOUND $${cash} ON OFFICER HARDASS' CARCASS!!!`);
-          if(g.Z>=1200&&g.J>0&&await yesNo('WILL YOU PAY $1000 FOR A DOCTOR TO SEW YOU UP?')){g.Z-=1000;g.J=0}
+          await say(`YOU GOT $${cash}.`);
+          if(g.Z>=1200&&g.J>0&&await yesNo('PAY $1000 FOR A DOCTOR?')){g.Z-=1000;g.J=0}
           return 'ok';
         }
       } else await say("YOU MISSED!!!");
@@ -251,32 +251,32 @@ async function newDay(){
   switch(D){
     case 1: g.pr[5]=2; await say("RIVAL DEALERS ARE SELLING CHEAP LUDES!!!"); break;
     case 2: g.pr[3]=122; await say("WEED PRICES HAVE BOTTOMED-OUT!!!"); break;
-    case 3: g.pr[1]=int(850+R()*1150); await say("PIGS FLOODED THE STREETS WITH SEIZED HEROINE! IT'S DIRT CHEAP!!!"); break;
-    case 4: case 5: g.pr[1]=int(18000+R()*25000); await say("ADDICTS ARE BUYING HEROINE AT OUTRAGEOUS PRICES!!!"); break;
-    case 6: case 7: g.pr[0]=int(80000+R()*60000); await say("PIGS MADE A BIG COKE BUST! PRICES ARE OUTRAGEOUS!!!"); break;
-    case 8: g.Z=2*int(g.Z/3); await say("YOU WERE MUGGED IN THE SUBWAY!!"); break;
+    case 3: g.pr[1]=int(850+R()*1150); break;
+    case 4: case 5: g.pr[1]=int(18000+R()*25000); break;
+    case 6: case 7: g.pr[0]=int(80000+R()*60000); break;
+    case 8: g.Z=2*int(g.Z/3); break;
     case 9: case 10: case 11:
       if(carried()>=50) return await chase({9:1,10:3,11:4}[D]);
       break;
     case 12: case 13:
       if(g.Z>=500&&free()>=5){
         const gun=['BARRETTA','SATURDAY NIGHT SPECIAL','.44 MAGNUM'][int(R()*3)];
-        if(await yesNo(`WOULD YOU LIKE TO BUY A ${gun} FOR $400?`)){g.I++;g.Z-=400;g.T-=5}
+        if(await yesNo(`BUY A ${gun} FOR $400?`)){g.I++;g.Z-=400;g.T-=5}
       } break;
     case 14:
-      if(await yesNo("THERE IS SOME WEED HERE THAT SMELLS LIKE PARAQUAT!! IT LOOKS GOOD!! WILL YOU SMOKE IT?")){
-        await say("YOU HALLUCINATE ON THE WILDEST TRIP OF YOUR LIFE, STUMBLE ONTO THE SUBWAY TRACKS AND GET CREAMED BY A TRAIN.\n\nJUST SAY NO.");
+      if(await yesNo("SMOKE SOME WEED?")){
+        await say("YOU DIED.");
         return 'dead';
       } break;
     case 15:
-      if(g.Z>=300&&await yesNo("WOULD YOU LIKE TO BUY A TRENCHCOAT WITH MORE POCKETS FOR $200?")){g.T+=10;g.Z-=200}
+      if(g.Z>=300&&await yesNo("BUY A TRENCHCOAT FOR $200?")){g.T+=10;g.Z-=200}
       break;
     case 16:
       if(free()>=8){
         const X=int(R()*7+1),i=[5,4,3,2,1][int(R()*5)];
-        g.st[i]+=X; await say(`YOU FIND ${X} UNITS OF ${DRUGS[i]} ON A DEAD DUDE IN THE SUBWAY!!`);
+        g.st[i]+=X;
       } break;
-    case 17: g.pr[2]=int(250+R()*550); await say("THE MARKET HAS BEEN FLOODED WITH CHEAP HOME-MADE ACID!!!"); break;
+    case 17: g.pr[2]=int(250+R()*550); break;
   }
   return 'ok';
 }

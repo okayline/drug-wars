@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.1 — 2026-10-26 05:47 HST
+
+- Removed: the 10 event and chase messages I wrote myself (not from the original): the heroin cheap/expensive messages, the coke bust, the subway mugging, the dead-dude find, the acid flood (these events now happen with no message), the paraquat weed wording and train-death story, the Hardass intro, "YOU'VE BEEN HIT!!", the "killed all of them / carcass" line.
+- Changed: the offers and the chase now use bare plain prompts: "BUY A [gun] FOR $400?", "SMOKE SOME WEED?", "YOU DIED.", "BUY A TRENCHCOAT FOR $200?", "[n] PIGS ARE CHASING YOU.", "YOU'RE HIT.", "YOU GOT $[n].", "PAY $1000 FOR A DOCTOR?". The two event messages and the chase lines that came from the original are unchanged.
+
 ## v1.2.0 — 2026-10-26 05:38 HST
 
 Player dealing.
