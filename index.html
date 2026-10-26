@@ -1,0 +1,346 @@
+<title>Drugwar Calculator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,700;1,700&display=swap">
+<style>
+/* Layout: one TI-82-style calculator, centered: LCD window, 5 flat function keys, then the keypad. Single dark look on purpose. */
+:root{
+  --room:#141519; --shell:#3a3c40; --shell-hi:#47494e; --face:#2a2c30;
+  --key:#17181a; --num:#74777c; --op:#4f6d93; --second:#3b8ee0;
+  --lbl2:#6fa8e6; --lbla:#c9cbc4; --fg:#e7e8e3; --muted:#8b8f96; --gold:#d8b23a;
+  --lcd:#a9b39c;
+  --sans:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--room);color:var(--fg);font-family:var(--sans);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:20px;display:flex;flex-direction:column;align-items:center;gap:12px;box-sizing:border-box}
+.calc{width:100%;max-width:380px;background:linear-gradient(180deg,var(--shell-hi),var(--shell) 25%);
+  border-radius:18px 18px 26px 26px;padding:14px 14px 20px;box-sizing:border-box;
+  box-shadow:0 18px 40px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.08)}
+.window{background:var(--face);border-radius:10px;padding:8px 16px 18px}
+.brand{display:flex;justify-content:flex-end;margin:0 0 8px;font:italic 700 18px/1 var(--sans);color:var(--gold);letter-spacing:.04em}
+canvas{display:block;width:100%;max-width:100%;aspect-ratio:3/2;background:var(--lcd);
+  image-rendering:pixelated;box-shadow:inset 0 2px 6px rgba(0,0,0,.35)}
+.keys{display:grid;grid-template-columns:repeat(5,1fr);column-gap:8px;row-gap:4px;margin-top:12px}
+.k{display:flex;flex-direction:column;align-items:stretch;gap:1px;min-width:0}
+.k small{display:flex;justify-content:space-between;font:500 9.5px/1.15 var(--sans);letter-spacing:.03em;height:11px;white-space:nowrap;overflow:hidden;padding-left:3px}
+.k small i{font-style:normal;color:var(--lbl2)} .k small b{font-weight:500;color:var(--lbla)}
+button{font:700 12.5px/1 var(--sans);letter-spacing:.03em;border:0;border-radius:6px;padding:8px 0;
+  background:var(--key);color:var(--fg);cursor:pointer;box-shadow:0 2px 0 rgba(0,0,0,.6);touch-action:manipulation;white-space:nowrap}
+button.n{background:var(--num);font-size:17px;padding:7px 0}
+button.op{background:var(--op);font-size:15px;padding:7px 0}
+button.second{background:var(--second)}
+button.fn{border-radius:4px;padding:5px 0;font-size:11px}
+button:active,button.down{transform:translateY(1px);box-shadow:0 1px 0 rgba(0,0,0,.6)}
+button:focus-visible{outline:2px solid var(--second);outline-offset:2px}
+.pad{grid-column:4/6;grid-row:2/4;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:2px;padding:4px 2px}
+.pad button{background:var(--op);font-size:11px;padding:0;border-radius:6px}
+.pad [data-k=up]{grid-area:1/2} .pad [data-k=left]{grid-area:2/1} .pad [data-k=right]{grid-area:2/3} .pad [data-k=down]{grid-area:3/2}
+.fnrow{grid-column:1/-1;display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:6px}
+.hint{font-size:14px;color:var(--muted);letter-spacing:.04em;text-align:center;max-width:380px}
+@media (prefers-reduced-motion:reduce){button:active{transform:none}}
+</style>
+
+<div class="calc">
+  <div class="window">
+    <div class="brand">DW-82</div>
+    <canvas id="lcd" width="384" height="256" aria-label="Calculator screen"></canvas>
+  </div>
+  <div class="keys" id="keys"></div>
+</div>
+<p class="hint">v1.0</p>
+<script>
+// ---------- 5x7 font, 7 rows of 5 bits per glyph (hex) ----------
+const FONT={A:"0E11111F111111",B:"1E11111E11111E",C:"0E11101010110E",D:"1C12111111121C",E:"1F10101E10101F",
+F:"1F10101E101010",G:"0E11101711110F",H:"1111111F111111",I:"0E04040404040E",J:"0702020202120C",K:"11121418141211",
+L:"1010101010101F",M:"111B1515111111",N:"11111915131111",O:"0E11111111110E",P:"1E11111E101010",Q:"0E11111115120D",
+R:"1E11111E141211",S:"0F10100E01011E",T:"1F040404040404",U:"1111111111110E",V:"11111111110A04",W:"1111111515150A",
+X:"11110A040A1111",Y:"1111110A040404",Z:"1F01020408101F","0":"0E11131519110E","1":"040C040404040E",
+"2":"0E11010204081F","3":"1F02040201110E","4":"02060A121F0202","5":"1F101E0101110E","6":"0608101E11110E",
+"7":"1F010204080808","8":"0E11110E11110E","9":"0E11110F01020C","!":"04040404040004","?":"0E110102040004",
+".":"00000000000C0C",",":"000000000C0408",":":"000C0C000C0C00","'":"0C040800000000","-":"0000001F000000",
+"$":"040F140E051E04","=":"00001F001F0000","(":"02040808080402",")":"08040202020408","/":"00010204081000",
+"+":"0004041F040400",'"':"0A0A0A00000000","%":"18190204081303",">":"08040201020408","*":"0004150E150400",
+" ":"00000000000000","█":"1F1F1F1F1F1F1F"};
+
+// ---------- LCD: 128x64, 21 cols x 8 rows ----------
+const W=96,H=64,COLS=16,ROWS=8;
+const cv=document.getElementById('lcd'),ctx=cv.getContext('2d');
+const px=new Uint8Array(W*H);
+let rows=[],invs=[],cursor=null,pauseInd=false,blink=true,phase=0;
+function clr(){rows=Array(ROWS).fill('');invs=[];cursor=null}
+function glyph(x0,y0,ch){
+  const g=FONT[ch]||FONT[ch.toUpperCase()]||FONT['?'];
+  for(let y=0;y<7;y++){const v=parseInt(g.substr(y*2,2),16);
+    for(let x=0;x<5;x++) if(v&(16>>x)) px[(y0+y)*W+x0+x]=1;}
+}
+function draw(){
+  px.fill(0);
+  rows.forEach((s,r)=>{for(let c=0;c<Math.min(s.length,COLS);c++) glyph(c*6,r*8,s[c])});
+  if(cursor&&blink) glyph(cursor.c*6,cursor.r*8,'█');
+  for(const v of invs) for(let y=v.r*8;y<v.r*8+8;y++) for(let x=v.c0*6;x<Math.min(W,v.c1*6);x++) px[y*W+x]^=1;
+  if(pauseInd) for(let y=0;y<8;y++) if((y+phase)%4<2){px[y*W+94]=1;px[y*W+95]=1}
+  ctx.fillStyle='#a9b39c';ctx.fillRect(0,0,384,256);
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    ctx.fillStyle=px[y*W+x]?'#1f2519':'rgba(40,50,30,0.06)';
+    ctx.fillRect(x*4,y*4,3.7,3.7);
+  }
+}
+setInterval(()=>{blink=!blink;phase=(phase+1)%4;draw()},300);
+
+
+// ---------- keypad (TI-82 layout; only game keys do anything) ----------
+function buildKeys(){
+  const fn=[['STAT PLOT','','Y='],['TblSet','','WINDOW'],['','','ZOOM'],['CALC','','TRACE'],['TABLE','','GRAPH']];
+  const rows=[
+    [['ENTER','','2nd','second','enter'],['CLEAR','','MODE','','clear'],['BACK','','DEL','','del']],
+    [['+100','','ALPHA','','p100'],['−100','','X,T,θ','','m100'],['MAX','','STAT','','max']],
+    [['TEST','A','MATH'],['ANGLE','B','MATRX'],['DRAW','C','PRGM'],['Y-VARS','','VARS'],['','','CLEAR','','clear']],
+    [['ABS','D','x⁻¹'],['SIN⁻¹','E','SIN'],['COS⁻¹','F','COS'],['TAN⁻¹','G','TAN'],['π','H','^','op']],
+    [['√','I','x²'],['EE','J',','],['{','K','('],['}','L',')'],['','M','÷','op']],
+    [['10ˣ','N','LOG'],['u','O','7','n','7'],['v','P','8','n','8'],['n','Q','9','n','9'],['[','R','×','op']],
+    [['eˣ','S','LN'],['L4','T','4','n','4'],['L5','U','5','n','5'],['L6','V','6','n','6'],[']','W','−','op']],
+    [['RCL','X','STO▸'],['L1','Y','1','n','1'],['L2','Z','2','n','2'],['L3','θ','3','n','3'],['MEM','"','+','op']],
+    [['OFF','','ON'],['','␣','0','n','0'],['',':','.','n'],['ANS','?','(−)','n'],['ENTRY','','ENTER','op','enter']],
+  ];
+  const el=document.getElementById('keys');
+  const key=([a,b,t,cls,k])=>`<div class="k"><small><i>${a}</i><b>${b}</b></small><button class="${cls||''}"${k?` data-k="${k}"`:''}>${t}</button></div>`;
+  let h='<div class="fnrow">'+fn.map(([a,b,t])=>`<div class="k"><small><i>${a}</i></small><button class="fn">${t}</button></div>`).join('')+'</div>';
+  rows.slice(0,2).forEach((r,i)=>{h+=r.map(key).join(''); if(i===0) h+='<div class="pad"><button data-k="up" aria-label="Up">▲</button><button data-k="left" aria-label="Left">◀</button><button data-k="right" aria-label="Right">▶</button><button data-k="down" aria-label="Down">▼</button></div>'});
+  el.innerHTML=h;
+}
+
+// ---------- input plumbing ----------
+let handler=null;
+function waitKey(fn){return new Promise(res=>{handler=k=>{const v=fn(k);if(v!==undefined){handler=null;res(v)}}})}
+function press(k){if(handler) handler(k);draw()}
+buildKeys();
+document.getElementById('keys').addEventListener('click',e=>{const b=e.target.closest('button');if(b) press(b.dataset.k)});
+const KEYMAP={Enter:'enter',Backspace:'del',Delete:'del',Escape:'clear',ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'};
+addEventListener('keydown',e=>{
+  if(e.target.tagName==='BUTTON'&&(e.key==='Enter'||e.key===' ')) return;
+  const k=/^[0-9]$/.test(e.key)?e.key:KEYMAP[e.key];
+  if(!k) return; e.preventDefault();
+  const b=document.querySelector(`[data-k="${k}"]`); if(b){b.classList.add('down');setTimeout(()=>b.classList.remove('down'),90)}
+  press(k);
+});
+
+// ---------- screen helpers ----------
+function wrap(text,w=COLS){
+  const out=[];
+  for(const para of String(text).split('\n')){
+    if(!para){out.push('');continue}
+    let line='';
+    for(let word of para.split(' ')){
+      while(word.length>w){ if(line){out.push(line);line=''} out.push(word.slice(0,w)); word=word.slice(w) }
+      if(!line) line=word; else if(line.length+1+word.length<=w) line+=' '+word; else {out.push(line);line=word}
+    }
+    out.push(line);
+  }
+  return out;
+}
+async function say(text){ // like Disp + Pause
+  const lines=wrap(text,15);
+  for(let i=0;i<lines.length;i+=ROWS-1){
+    clr(); lines.slice(i,i+ROWS-1).forEach((l,j)=>rows[j]=l);
+    pauseInd=true; draw();
+    await waitKey(k=>(k==='enter'||k==='clear')?true:undefined);
+    pauseInd=false;
+  }
+}
+async function show(lines,titled){ // full screen then Pause
+  clr(); lines.forEach((l,j)=>rows[j]=l); if(titled) invs=[{r:0,c0:0,c1:COLS+1}];
+  pauseInd=true; draw(); await waitKey(k=>(k==='enter'||k==='clear')?true:undefined); pauseInd=false;
+}
+function pick(head,items,{title=false,cancel=false}={}){ // like Menu(
+  let sel=0;
+  const render=()=>{
+    clr(); head.forEach((l,j)=>rows[j]=l);
+    invs=title?[{r:0,c0:0,c1:COLS+1}]:[];
+    items.forEach((it,i)=>{rows[head.length+i]=(i+1)+':'+it});
+    invs.push({r:head.length+sel,c0:0,c1:2});
+    draw();
+  };
+  render();
+  return waitKey(k=>{
+    if(k==='up'){sel=(sel+items.length-1)%items.length;render();return}
+    if(k==='down'){sel=(sel+1)%items.length;render();return}
+    if(k==='enter') return sel;
+    if((k==='clear'||k==='del')&&cancel) return -1;
+    const n=+k; if(k>='1'&&k<='9'&&n<=items.length) return n-1;
+  });
+}
+const yesNo=text=>pick(wrap(text),['YES','NO']).then(i=>i===0);
+function askNum(lines,max){ // like Input
+  let buf='';
+  const set=v=>{buf=String(Math.max(0,Math.min(999999999,v)));render()};
+  const STEP={up:1,down:-1,right:10,left:-10,p100:100,m100:-100};
+  const render=()=>{clr();lines.forEach((l,j)=>rows[j]=l);const r=lines.length-1;rows[r]=lines[r]+buf;cursor={r,c:rows[r].length};draw()};
+  render();
+  return waitKey(k=>{
+    if(/^[0-9]$/.test(k)){if(buf.length<9)buf+=k;render();return}
+    if(k==='del'){if(!buf){cursor=null;return null} buf=buf.slice(0,-1);render();return}
+    if(k in STEP){set((parseInt(buf,10)||0)+STEP[k]);return}
+    if(k==='max'&&max!=null){set(max);return}
+    if(k==='clear'){if(!buf) {cursor=null;return null} buf='';render();return}
+    if(k==='enter'){cursor=null;return buf===''?null:parseInt(buf,10)}
+  });
+}
+
+// ---------- the game (rules from the TI-82/83 BASIC "J.M.'S DRUGWAR 2.00") ----------
+const DRUGS=['COCAINE','HEROINE','ACID','WEED','SPEED','LUDES'];
+const PLACES=['BRONX','GHETTO','CENTRAL PARK','MANHATTEN','CONEY ISLAND','BROOKLYN'];
+const R=Math.random,round=Math.round,int=Math.floor;
+let g;
+const carried=()=>g.st.reduce((a,b)=>a+b,0);
+const free=()=>g.T-carried();
+
+function rollPrices(){
+  g.pr=[round(R()*12000+16000),round(R()*7000+5000),round(R()*34+10)*100,
+        round(R()*42+33)*10,round(R()*15+7)*10,round(R()*4+1)*10];
+}
+
+async function chase(d){ // d = deputies; pigs = d+1
+  await say(`OFFICER HARDASS AND ${d} OF HIS DEPUTIES ARE CHASING YOU!!`);
+  const fire=async()=>{
+    if(R()<.5){await say("THEY MISSED!!");return false}
+    g.J+=3; await say("YOU'VE BEEN HIT!!");
+    if(g.J>=50){await say("YOU'VE BEEN KILLED!!");return true}
+    return false;
+  };
+  for(;;){
+    const c=await pick(['BEING CHASED!!'],['VIEW GUNS','VIEW DAMMAGE','NUMBER OF PIGS','RUN','FIGHT'],{title:true});
+    if(c===0) await say(`GUNS: ${g.I}`);
+    else if(c===1) await say(`DAMMAGE: ${g.J}`);
+    else if(c===2) await say(`PIGS: ${d+1}`);
+    else if(c===3){
+      if(R()<.5){await say("YOU LOST THEM IN AN ALLEY!!");return 'ok'}
+      await say("YOU CAN'T SHAKE THEM!");
+      if(await fire()) return 'dead';
+    } else {
+      if(g.I===0){await say("YOU DON'T HAVE ANY GUNS! YOU HAVE TO RUN!");continue}
+      if(R()<.5){
+        await say("YOU KILLED ONE!!"); d--;
+        if(d<0){
+          const cash=int(R()*1250+750); g.Z+=cash;
+          await say(`YOU KILLED ALL OF THEM!!!\n\nYOU FOUND $${cash} ON OFFICER HARDASS' CARCASS!!!`);
+          if(g.Z>=1200&&g.J>0&&await yesNo('WILL YOU PAY $1000 FOR A DOCTOR TO SEW YOU UP?')){g.Z-=1000;g.J=0}
+          return 'ok';
+        }
+      } else await say("YOU MISSED!!!");
+      if(await fire()) return 'dead';
+    }
+  }
+}
+
+async function newDay(){
+  rollPrices();
+  const D=round(R()*20);
+  switch(D){
+    case 1: g.pr[5]=2; await say("RIVAL DEALERS ARE SELLING CHEAP LUDES!!!"); break;
+    case 2: g.pr[3]=122; await say("WEED PRICES HAVE BOTTOMED-OUT!!!"); break;
+    case 3: g.pr[1]=int(850+R()*1150); await say("PIGS FLOODED THE STREETS WITH SEIZED HEROINE! IT'S DIRT CHEAP!!!"); break;
+    case 4: case 5: g.pr[1]=int(18000+R()*25000); await say("ADDICTS ARE BUYING HEROINE AT OUTRAGEOUS PRICES!!!"); break;
+    case 6: case 7: g.pr[0]=int(80000+R()*60000); await say("PIGS MADE A BIG COKE BUST! PRICES ARE OUTRAGEOUS!!!"); break;
+    case 8: g.Z=2*int(g.Z/3); await say("YOU WERE MUGGED IN THE SUBWAY!!"); break;
+    case 9: case 10: case 11:
+      if(carried()>=50) return await chase({9:1,10:3,11:4}[D]);
+      break;
+    case 12: case 13:
+      if(g.Z>=500&&free()>=5){
+        const gun=['BARRETTA','SATURDAY NIGHT SPECIAL','.44 MAGNUM'][int(R()*3)];
+        if(await yesNo(`WOULD YOU LIKE TO BUY A ${gun} FOR $400?`)){g.I++;g.Z-=400;g.T-=5}
+      } break;
+    case 14:
+      if(await yesNo("THERE IS SOME WEED HERE THAT SMELLS LIKE PARAQUAT!! IT LOOKS GOOD!! WILL YOU SMOKE IT?")){
+        await say("YOU HALLUCINATE ON THE WILDEST TRIP OF YOUR LIFE, STUMBLE ONTO THE SUBWAY TRACKS AND GET CREAMED BY A TRAIN.\n\nJUST SAY NO.");
+        return 'dead';
+      } break;
+    case 15:
+      if(g.Z>=300&&await yesNo("WOULD YOU LIKE TO BUY A TRENCHCOAT WITH MORE POCKETS FOR $200?")){g.T+=10;g.Z-=200}
+      break;
+    case 16:
+      if(free()>=8){
+        const X=int(R()*7+1),i=[5,4,3,2,1][int(R()*5)];
+        g.st[i]+=X; await say(`YOU FIND ${X} UNITS OF ${DRUGS[i]} ON A DEAD DUDE IN THE SUBWAY!!`);
+      } break;
+    case 17: g.pr[2]=int(250+R()*550); await say("THE MARKET HAS BEEN FLOODED WITH CHEAP HOME-MADE ACID!!!"); break;
+  }
+  return 'ok';
+}
+
+const priceItems=()=>DRUGS.map((d,i)=>d.padEnd(8)+String(g.pr[i]).padStart(6));
+
+async function buy(){
+  const i=await pick(['WHAT TO BUY?'],priceItems(),{title:true,cancel:true}); if(i<0) return;
+  const afford=int(g.Z/g.pr[i]);
+  const n=await askNum(['YOU CAN AFFORD:',String(afford).padStart(COLS),'YOU CAN HOLD:',String(free()).padStart(COLS),'HOW MUCH?'],Math.min(afford,free()));
+  if(!n) return;
+  if(n>afford) return say("YOU CAN'T AFFORD THAT MUCH!");
+  if(n>free()) return say("YOU CAN'T HOLD THAT MUCH!");
+  g.st[i]+=n; g.Z-=n*g.pr[i];
+}
+async function sell(){
+  const i=await pick(['WHAT TO SELL?'],priceItems(),{title:true,cancel:true}); if(i<0) return;
+  const n=await askNum(['YOU HAVE:',String(g.st[i]).padStart(COLS),'HOW MUCH?'],g.st[i]);
+  if(!n) return;
+  if(n>g.st[i]) return say("YOU DON'T HAVE THAT MUCH!");
+  g.st[i]-=n; g.Z+=n*g.pr[i];
+}
+async function loanShark(){
+  if(g.loc!==0) return say("THE LOAN SHARK ONLY DEALS IN THE BRONX.");
+  const c=await pick(['LOAN SHARK...'],['REPAY','BORROW'],{title:true,cancel:true}); if(c<0) return;
+  const n=await askNum([`YOU OWE: $${g.Y}`,`CASH: $${g.Z}`,'HOW MUCH?'],c===0?Math.min(g.Z,g.Y):5000);
+  if(n===null) return;
+  if(c===0){ if(n>g.Z||n>g.Y) return say("YOU CAN'T DO THAT, MAN!"); g.Y-=n; g.Z-=n }
+  else { if(n>5000) return say("YOU THINK HE'S CRAZY, MAN?!"); g.Y+=n; g.Z+=n }
+}
+async function bank(){
+  if(g.loc!==0) return say("THE BANK IS IN THE BRONX.");
+  for(;;){
+    const c=await pick([' BANK '],['VIEW ACCOUNT','DEPOSIT','WITHDRAW','GOODBYE'],{title:true,cancel:true});
+    if(c<0||c===3) return;
+    if(c===0){await say(`BALANCE: $${g.V}`);continue}
+    const n=await askNum([`BALANCE: $${g.V}`,`CASH: $${g.Z}`,'HOW MUCH?'],c===1?g.Z:g.V); if(n===null) continue;
+    if(c===1){ if(n>g.Z){await say("YOU DON'T HAVE THAT MUCH!");continue} g.V+=n; g.Z-=n }
+    else { if(n>g.V){await say("YOU DON'T HAVE THAT MUCH!");continue} g.V-=n; g.Z+=n }
+  }
+}
+
+async function game(){
+  g={Z:2000,Y:5000,V:0,T:100,B:1,I:0,J:0,st:[0,0,0,0,0,0],pr:[],loc:0};
+  await say("J.M.'S DRUGWAR\nVERSION 2.00\n\nJUST SAY NO.");
+  await say("PAY OFF THE LOAN SHARK, THEN MAKE AS MUCH MONEY AS YOU CAN IN ONE MONTH.\n\nTHE LOAN SHARK AND THE BANK ARE IN THE BRONX.");
+  let dead=(await newDay())==='dead';
+  while(!dead){
+    const c=await pick(['DRUGWAR!'],['SEE PRICES','TRENCHCOAT','BUY','SELL','JET','SEE LOAN SHARK','VISIT BANK'],{title:true});
+    if(c===0) await show([PLACES[g.loc],...DRUGS.map((d,i)=>d.padEnd(9)+('$'+g.pr[i]).padStart(7)),`DAY ${g.B}  $${g.Z}`],true);
+    else if(c===1) await show(['TRENCHCOAT',...DRUGS.map((d,i)=>d.padEnd(9)+String(g.st[i]).padStart(7)),`GUNS ${g.I}  FREE ${free()}`],true);
+    else if(c===2) await buy();
+    else if(c===3) await sell();
+    else if(c===4){
+      const p=await pick(['WHERE TO, DUDE?'],[...PLACES,'OOPS... STAY!'],{title:true,cancel:true});
+      if(p<0||p===6) continue;
+      g.loc=p; g.B++; g.Y=int(g.Y*1.1); g.V=int(g.V*1.06);
+      if(g.B>=31) break;
+      dead=(await newDay())==='dead';
+    }
+    else if(c===5) await loanShark();
+    else await bank();
+  }
+  const total=g.V+g.Z-g.Y;
+  const score=total<=0?0:Math.min(100,round(Math.sqrt(total/31.5)));
+  await show([' GAME OVER!','YOUR SCORE (ON A','SCALE OF 1 TO','100)=',String(score).padStart(COLS),`CASH $${g.Z}`,`BANK $${g.V}`,`DEBT $${g.Y}`]);
+  return (await pick(['PLAY AGAIN?'],['YES','NO']))===0;
+}
+
+(async()=>{
+  for(;;){
+    if(!(await game())){
+      clr(); rows[0]='Done'.toUpperCase().padStart(COLS); draw();
+      await waitKey(k=>k==='enter'?true:undefined);
+    }
+  }
+})();
+</script>
