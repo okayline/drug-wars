@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.2 — 2026-10-26 06:06 HST
+
+- Changed: the text on the calculator keys and the blue labels above them can no longer be selected.
+- Removed: nothing.
+
 ## v1.3.1 — 2026-10-26 06:03 HST
 
 - Fixed: the arrow keys, −100 and θ showed as garbled characters on dw.88x31.app. The page now says it is UTF-8.
