@@ -49,7 +49,7 @@ button:focus-visible{outline:2px solid var(--second);outline-offset:2px}
   </div>
   <div class="keys" id="keys"></div>
 </div>
-<p class="hint">v1.0</p>
+<p class="hint">v1.1</p>
 <script>
 // ---------- 5x7 font, 7 rows of 5 bits per glyph (hex) ----------
 const FONT={A:"0E11111F111111",B:"1E11111E11111E",C:"0E11101010110E",D:"1C12111111121C",E:"1F10101E10101F",
@@ -92,7 +92,7 @@ setInterval(()=>{blink=!blink;phase=(phase+1)%4;draw()},300);
 
 // ---------- keypad (TI-82 layout; only game keys do anything) ----------
 function buildKeys(){
-  const fn=[['STAT PLOT','','Y='],['TblSet','','WINDOW'],['','','ZOOM'],['CALC','','TRACE'],['TABLE','','GRAPH']];
+  const fn=[['STAT PLOT','','Y='],['About','','WINDOW','','about'],['','','ZOOM'],['CALC','','TRACE'],['TABLE','','GRAPH']];
   const rows=[
     [['ENTER','','2nd','second','enter'],['CLEAR','','MODE','','clear'],['BACK','','DEL','','del']],
     [['+100','','ALPHA','','p100'],['−100','','X,T,θ','','m100'],['MAX','','STAT','','max']],
@@ -106,7 +106,7 @@ function buildKeys(){
   ];
   const el=document.getElementById('keys');
   const key=([a,b,t,cls,k])=>`<div class="k"><small><i>${a}</i><b>${b}</b></small><button class="${cls||''}"${k?` data-k="${k}"`:''}>${t}</button></div>`;
-  let h='<div class="fnrow">'+fn.map(([a,b,t])=>`<div class="k"><small><i>${a}</i></small><button class="fn">${t}</button></div>`).join('')+'</div>';
+  let h='<div class="fnrow">'+fn.map(([a,b,t,c,k])=>`<div class="k"><small><i>${a}</i></small><button class="fn"${k?` data-k="${k}"`:''}>${t}</button></div>`).join('')+'</div>';
   rows.slice(0,2).forEach((r,i)=>{h+=r.map(key).join(''); if(i===0) h+='<div class="pad"><button data-k="up" aria-label="Up">▲</button><button data-k="left" aria-label="Left">◀</button><button data-k="right" aria-label="Right">▶</button><button data-k="down" aria-label="Down">▼</button></div>'});
   el.innerHTML=h;
 }
@@ -114,7 +114,17 @@ function buildKeys(){
 // ---------- input plumbing ----------
 let handler=null;
 function waitKey(fn){return new Promise(res=>{handler=k=>{const v=fn(k);if(v!==undefined){handler=null;res(v)}}})}
-function press(k){if(handler) handler(k);draw()}
+const ABOUT=["DRUGWAR v1.1\n\nA CLONE OF THE OLD TI-82/83 GAME.\n\nYOU HAVE 30 DAYS.","GOAL\n\nBUY LOW, SELL HIGH. PAY OFF THE LOAN SHARK. END RICH.","TIPS\nSHARK AND BANK ARE IN THE BRONX. DEBT GROWS 10% A DAY. CARRY 50+ AND COPS MAY CHASE YOU."];
+let about=null; // {pages,i,saved}
+function aboutShow(){const lines=wrap(ABOUT[about.i],15).slice(0,ROWS-1);clr();lines.forEach((l,j)=>rows[j]=l);pauseInd=true}
+function press(k){
+  if(about){
+    if(k==='enter'||k==='about'){about.i++; if(about.i<ABOUT.length) aboutShow(); else k='clear'}
+    if(k==='clear'||k==='del'){({rows,invs,cursor,pauseInd}=about.saved);about=null}
+    draw();return;
+  }
+  if(k==='about'){about={i:0,saved:{rows,invs,cursor,pauseInd}};aboutShow();draw();return}
+  if(handler) handler(k);draw()}
 buildKeys();
 document.getElementById('keys').addEventListener('click',e=>{const b=e.target.closest('button');if(b) press(b.dataset.k)});
 const KEYMAP={Enter:'enter',Backspace:'del',Delete:'del',Escape:'clear',ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'};

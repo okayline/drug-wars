@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1 — 2026-10-26 05:24 HST
+
+- Added: WINDOW key opens a 3-page About screen on the LCD in the game's pixel font (what the game is, the goal, tips). ENTER or WINDOW pages through; MODE or DEL closes it and returns to where you were.
+- Changed: the blue label above WINDOW says "About" instead of "TblSet"; the version under the calculator says v1.1.
+- Removed: nothing.
+
 ## v1.0 — 2026-10-26 05:20 HST
 
 First release.
