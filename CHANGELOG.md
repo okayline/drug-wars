@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.3 — 2026-10-26 05:54 HST
+
+- Changed: ▶ now also works as ENTER and ◀ as back (the same as DEL) in menus, on message screens and in the About pages. While you type an amount they still add and take off 10.
+- Removed: nothing.
+
 ## v1.2.2 — 2026-10-26 05:49 HST
 
 - Removed: the small lines I wrote that the original doesn't show: "YOU CAN'T AFFORD THAT MUCH!", "YOU CAN'T HOLD THAT MUCH!", "YOU DON'T HAVE THAT MUCH!" (buy, sell, bank), "YOU CAN'T DO THAT, MAN!" (loan). A number that's too big now just returns you to the menu. Also removed my second intro screen ("PAY OFF THE LOAN SHARK, THEN MAKE AS MUCH MONEY...") and the plain placeholder prompts from v1.2.1.
