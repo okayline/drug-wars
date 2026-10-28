@@ -1,8 +1,9 @@
-// Drugwar Worker (v2.0.0). The page is a static asset; /api/* comes here first.
+// Drugwar Worker (v2.1.0). The page is a static asset; /api/* comes here first.
 //
 //   POST /api/bank/new                   make a bank: { code, balance: 0 }
 //   GET  /api/bank?code=12345678         look a bank up: { code, balance, name }, or 404
 //   POST /api/name {code}                reroll the bank's name (names can't be typed): { name }
+//   GET  /api/ledger?code=C              replay a bank's log chain: { ok, lines, chained, unchained, head } (ok is false if a line was edited)
 //   GET  /api/board                      today's best runs, by money at the end: { board: [{ name, money }] }
 //   GET  /api/deals?city=N&code=C        the deals that are up in city N (0..5), newest first: { deals: [{ id, drug, units, price, mine }] }
 //   GET  /api/run?code=C                 the bank's live run, if it has one: { run, balance, msgs: [] }
@@ -24,6 +25,7 @@
 // if the run is still at that version, so a double-sent or replayed request can't be applied twice.
 
 import { giveName } from "./names.js";
+import { head, recordOf, isUnique, verify } from "./ledger.js";
 
 const CAP = 50000; // the most a bank holds
 const MAX_UNITS = 100;    // one deal, and one purchase
@@ -68,7 +70,7 @@ class Oops extends Error {
 }
 
 const ROUTES = {
-  "POST /api/bank/new": make, "GET /api/bank": look, "POST /api/name": rename, "GET /api/board": board,
+  "POST /api/bank/new": make, "GET /api/bank": look, "POST /api/name": rename, "GET /api/board": board, "GET /api/ledger": ledger,
   "GET /api/deals": deals,
   "GET /api/run": runLook, "POST /api/run/start": runStart, "POST /api/run/act": runAct,
 };
@@ -144,6 +146,14 @@ async function rename(req, env) {
   await needBank(env, code);
   if (!(await rateLimit(env, req, "rename", 30, 3600))) throw new Oops("Too many tries. Try again later.", 429);
   return json({ name: await giveName(env, code, { reroll: true }) });
+}
+
+// replay a bank's log chain
+async function ledger(req, env, url) {
+  if (!(await rateLimit(env, req, "ledger", 30, 3600))) throw new Oops("Too many tries. Try again later.", 429);
+  const code = codeOf(url.searchParams.get("code"));
+  await needBank(env, code);
+  return json(await verify(env.DB, code));
 }
 
 // today's best runs (UTC day), by money at the end
@@ -342,7 +352,10 @@ async function runStart(req, env) {
     return json(await view(env, parse(again), bank.balance, []));
   }
   g.id = id;
-  await env.DB.prepare("INSERT INTO drugwars_log (run, bank, move, kind, amount, cash_after, at) VALUES (?, ?, 1, 'start', 0, ?, ?)").bind(id, code, g.cash, t).run();
+  const line = { bank: code, run: id, move: 1, kind: "start", drug: null, qty: null, amount: 0, cash_after: g.cash, at: t };
+  const prev = await head(env.DB, code);
+  await env.DB.prepare("INSERT INTO drugwars_log (run, bank, move, kind, amount, cash_after, at, prev_hash, hash) VALUES (?, ?, 1, 'start', 0, ?, ?, ?, ?)")
+    .bind(id, code, g.cash, t, prev, await sha256(prev + "|" + recordOf(line))).run();
   return json(await view(env, g, bank.balance, msgs));
 }
 
@@ -498,9 +511,11 @@ async function runAct(req, env) {
      WHERE id = ? AND ver = ?${fx.pre ? " AND (SELECT changes()) = 1" : ""}`)
     .bind(g.state, g.move, g.loc, g.cash, g.debt, g.coat, g.guns, g.damage, JSON.stringify(g.st),
           g.pending ? JSON.stringify(g.pending) : null, g.score, t, g.id, g.ver));
+  const line = { bank: code, run: g.id, move: g.move, kind: fx.kind, drug: fx.drug, qty: fx.qty, amount: fx.amount, cash_after: g.cash, at: t };
+  const prev = await head(env.DB, code);
   stmts.push(env.DB.prepare(
-    "INSERT INTO drugwars_log (run, bank, move, kind, drug, qty, amount, cash_after, at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (SELECT changes()) = 1")
-    .bind(g.id, code, g.move, fx.kind, fx.drug, fx.qty, fx.amount, g.cash, t));
+    "INSERT INTO drugwars_log (run, bank, move, kind, drug, qty, amount, cash_after, at, prev_hash, hash) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (SELECT changes()) = 1")
+    .bind(g.id, code, g.move, fx.kind, fx.drug, fx.qty, fx.amount, g.cash, t, prev, await sha256(prev + "|" + recordOf(line))));
   if (fx.post) stmts.push(env.DB.prepare(fx.post.sql).bind(...fx.post.args));
   if (over) { // a finished run goes on today's board if it is that bank's best so far
     stmts.push(env.DB.prepare(
@@ -508,7 +523,9 @@ async function runAct(req, env) {
        ON CONFLICT (day, bank) DO UPDATE SET money = MAX(money, excluded.money)`)
       .bind(int(t / 86400), code, fx.balance + g.cash - g.debt));
   }
-  const res = await env.DB.batch(stmts);
+  let res;
+  try { res = await env.DB.batch(stmts); }
+  catch (e) { if (isUnique(e)) throw new Oops("Out of date.", 409); throw e; } // another line already built on this chain head
   if (res[runIdx].meta.changes !== 1) throw new Oops(a === "buydeal" ? "Too late." : "Out of date.", 409);
 
   g.ver++;

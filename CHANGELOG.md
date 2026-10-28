@@ -2,6 +2,10 @@
 
 Newest first. Full details are kept privately.
 
+## v2.1.0 (Oct 28)
+- Added: every bank's history is now a tamper-proof log. Each line is locked to the one before it, so if anyone edits an old line, the check fails.
+- Added: a way to check a bank's history from the server.
+
 ## v2.0.1 (Oct 28)
 - Changed: price events now set the same prices as the original game: cheap heroine $850 to $2,000, heroine at $18,000 to $43,000, a coke bust at $80,000 to $140,000, acid flood $250 to $800, ludes at $2 and weed at $122. They were milder before.
 
