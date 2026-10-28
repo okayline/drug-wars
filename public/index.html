@@ -209,11 +209,13 @@ function askNum(lines,max){ // like Input
   });
 }
 
-// ---------- the game (rules from the TI-82/83 BASIC "J.M.'S DRUGWAR 2.00") ----------
+// ---------- the game ----------
+// The rules, prices and dice are on the server (src/worker.js). The page shows the run it sends back and sends one
+// action at a time; it never works out money, drugs or prices itself.
 const DRUGS=['COCAINE','HEROINE','ACID','WEED','SPEED','LUDES'];
 const PLACES=['BRONX','GHETTO','CENTRAL PARK','MANHATTEN','CONEY ISLAND','BROOKLYN'];
-const R=Math.random,round=Math.round,int=Math.floor;
-let g;
+const int=Math.floor;
+let g,V,NAME; // g = the run as the server last sent it, V = the bank balance, NAME = this bank's random name
 const CODE_KEY='dw-code'; // this browser's bank code; the balance itself lives on the server
 const getCode=()=>{try{return localStorage.getItem(CODE_KEY)}catch(e){return null}};
 const setCode=c=>{try{localStorage.setItem(CODE_KEY,c)}catch(e){}};
@@ -223,91 +225,59 @@ async function api(path,body){
     return r.ok?await r.json():null;
   }catch(e){return null}
 }
-async function loadBank(){ // the balance for this browser's code; makes a bank the first time
+async function loadBank(){ // the bank for this browser's code; makes one the first time
   let c=getCode(),r=c&&await api('/api/bank?code='+c);
   if(!r){r=await api('/api/bank/new',{}); if(r) setCode(r.code)}
-  return r?r.balance:0;
+  if(r) NAME=r.name;
+  return r;
 }
-const saveBank=v=>api('/api/bank/save',{code:getCode(),balance:v});
-const carried=()=>g.st.reduce((a,b)=>a+b,0);
-const free=()=>g.T-carried();
-
-function rollPrices(){
-  g.pr=[round(R()*12000+16000),round(R()*7000+5000),round(R()*34+10)*100,
-        round(R()*42+33)*10,round(R()*15+7)*10,round(R()*4+1)*10];
+function take(r){g=r.run;V=r.balance}
+async function showNews(){for(const n of g.news) await say(n)}
+async function loadRun(){ // this bank's live run, or a new one. false if the server can't be reached.
+  const code=getCode();
+  let r=await api('/api/run?code='+code), fresh=false;
+  if(!r) return false;
+  if(!r.run){r=await api('/api/run/start',{code}); fresh=true; if(!r) return false}
+  take(r);
+  if(fresh) for(const m of r.msgs) await say(m);
+  await showNews();
+  return true;
 }
-
-async function chase(d){ // d = deputies; pigs = d+1
-  await say(`OFFICER HARDASS AND ${d} OF HIS DEPPUTIES ARE AFTER YOU!`);
-  const fire=async()=>{
-    await say("THEY'RE FIRING AT YOU!!");
-    if(R()<.5){await say("THEY MISSED!!");return false}
-    g.J+=3; await say("YOU'VE BEEN HIT!");
-    if(g.J>=50){await say("YOU'VE BEEN KILLED!!");return true}
+// One action. Shows what the server says happened, then deals with any question or chase. False if it was refused.
+async function act(a,extra){
+  let r;
+  try{
+    const res=await fetch('/api/run/act',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:getCode(),ver:g.ver,a,...extra})});
+    r=res.ok?await res.json():null;
+  }catch(e){r=null}
+  if(!r){ // refused, or out of date: show the run as the server has it
+    const again=await api('/api/run?code='+getCode()); if(again&&again.run) take(again);
     return false;
-  };
-  for(;;){
+  }
+  take(r);
+  for(const m of r.msgs) await say(m);
+  return true;
+}
+const ASK={
+  gun:p=>`WILL YOU BUY A ${p.gun} FOR 400 DOLLARS?`,
+  weed:()=>"THERE'S SOME WEED HERE THAT SMELLS LIKE GOOD STUFF!! WILL YOU SMOKE IT?",
+  coat:()=>"WILL YOU BUY A NEW TRENCHCOAT WITH MORE POCKETS FOR 200 BUCKS?",
+  doc:()=>'WILL YOU PAY 1000 DOLLARS FOR A DOCTOR TO SEW YOU UP?',
+};
+async function settle(){ // answer whatever the server is waiting on
+  while(g.pending&&!g.over){
+    const p=g.pending;
+    if(p.type!=='chase'){ await act('answer',{yes:await yesNo(ASK[p.type](p))}); continue }
     const c=await pick(['BEING CHASED!!'],['VIEW GUNS','VIEW DAMMAGE','NUMBER OF PIGS','RUN','FIGHT'],{title:true});
-    if(c===0) await say(`NUMBER OF GUNS\nYOU HAVE: ${g.I}`);
-    else if(c===1) await say(`YOUR DAMMAGE=${g.J}\n(50 DAMMAGE AND YOU DIE!)`);
-    else if(c===2) await say(`THERE ARE: ${d+1}\nPIGS STILL CHASING YOU!`);
-    else if(c===3){
-      if(R()<.5){await say("YOU LOST THEM IN AN ALLEY!!");return 'ok'}
-      await say("YOU CAN'T SHAKE THEM!");
-      if(await fire()) return 'dead';
-    } else {
-      if(g.I===0){await say("YOU DON'T HAVE ANY GUNS! YOU HAVE TO RUN!");continue}
-      if(R()<.5){
-        await say("YOU KILLED ONE!!"); d--;
-        if(d<0){
-          const cash=int(R()*1250+750); g.Z+=cash;
-          await say(`YOU KILLED ALL OF THEM!\n\nYOU FOUND ${cash} DOLLARS ON OFFICER HARDASS' CARCASS!!`);
-          if(g.Z>=1200&&g.J>0&&await yesNo('WILL YOU PAY 1000 DOLLARS FOR A DOCTOR TO SEW YOU UP?')){g.Z-=1000;g.J=0}
-          return 'ok';
-        }
-      } else await say("YOU MISSED!!!");
-      if(await fire()) return 'dead';
-    }
+    if(c===0) await say(`NUMBER OF GUNS\nYOU HAVE: ${g.guns}`);
+    else if(c===1) await say(`YOUR DAMMAGE=${g.damage}\n(50 DAMMAGE AND YOU DIE!)`);
+    else if(c===2) await say(`THERE ARE: ${p.d+1}\nPIGS STILL CHASING YOU!`);
+    else await act(c===3?'run':'fight');
   }
 }
+async function turn(a,extra){ if(await act(a,extra)) await settle() }
 
-async function newDay(){
-  rollPrices();
-  const D=round(R()*20);
-  switch(D){
-    case 1: g.pr[5]=2; await say("RIVAL DEALERS ARE SELLING CHEAP LUDES!!!"); break;
-    case 2: g.pr[3]=122; await say("WEED PRICES HAVE BOTTOMED-OUT!!!"); break;
-    case 3: g.pr[1]=int(850+R()*1150); await say("PIGS ARE SELLING CHEAP HEROINE FROM LAST WEEK'S RAID!!!!"); break;
-    case 4: case 5: g.pr[1]=int(18000+R()*25000); await say("ADDICTS ARE BUYING HEROINE AT OUTRAGEOUS PRICES!!!"); break;
-    case 6: case 7: g.pr[0]=int(80000+R()*60000); await say("PIGS MADE A BIG COKE BUST! PRICES ARE OUTRAGEOUS!!!!"); break;
-    case 8: g.Z=2*int(g.Z/3); await say("YOU WERE MUGGED IN THE SUBWAY!"); break;
-    case 9: case 10: case 11:
-      if(carried()>=50) return await chase({9:1,10:3,11:4}[D]);
-      break;
-    case 12: case 13:
-      if(g.Z>=500&&free()>=5){
-        const gun=['BARRETTA','SATURDAY NIGHT SPECIAL','.44 MAGNUM'][int(R()*3)];
-        if(await yesNo(`WILL YOU BUY A ${gun} FOR 400 DOLLARS?`)){g.I++;g.Z-=400;g.T-=5}
-      } break;
-    case 14:
-      if(await yesNo("THERE'S SOME WEED HERE THAT SMELLS LIKE GOOD STUFF!! WILL YOU SMOKE IT?")){
-        await say("YOU HALLUCINATE ON THE WILDEST TRIP OF YOUR LIFE, STUMBLE ON TO THE SUBWAY TRACKS AND GET CREAMED BY A TRAIN.\n\nJUST SAY NO TO DRUGS.");
-        return 'dead';
-      } break;
-    case 15:
-      if(g.Z>=300&&await yesNo("WILL YOU BUY A NEW TRENCHCOAT WITH MORE POCKETS FOR 200 BUCKS?")){g.T+=10;g.Z-=200}
-      break;
-    case 16:
-      if(free()>=8){
-        const X=int(R()*7+1),i=[5,4,3,2,1][int(R()*5)];
-        g.st[i]+=X; await say(`YOU FOUND: ${X} UNITS OF: ${DRUGS[i]} ON A DEAD DUDE IN THE SUBWAY!!!`);
-      } break;
-    case 17: g.pr[2]=int(250+R()*550); await say("THE MARKET HAS BEEN FLOODED WITH CHEAP HOME-MADE ACID!!!!"); break;
-  }
-  return 'ok';
-}
-
-const priceItems=()=>DRUGS.map((d,i)=>d.padEnd(8)+String(g.pr[i]).padStart(6));
+const priceItems=prices=>DRUGS.map((d,i)=>d.padEnd(8)+String(prices[i]).padStart(6));
 const dealItems=ds=>ds.map(d=>(d.mine?'*':'')+d.units+' '+DRUGS[d.drug].slice(0,4)+' $'+d.price);
 
 async function buyDeal(){
@@ -315,21 +285,19 @@ async function buyDeal(){
   if(!r||!r.deals.length) return say('NO DEALS HERE.');
   const i=await pick(['PLAYER DEALS'],dealItems(r.deals),{title:true,cancel:true}); if(i<0) return;
   const d=r.deals[i]; if(d.mine) return;
-  const afford=int(g.Z/d.price), max=Math.min(afford,free(),d.units);
+  const afford=int(g.cash/d.price), max=Math.min(afford,g.free,d.units);
   const n=await askNum(['YOU CAN BUY:',String(max).padStart(COLS),'HOW MUCH?'],max);
   if(!n||n>max) return;
-  const b=await api('/api/deals/buy',{code:getCode(),id:d.id,units:n});
-  if(!b) return say('TOO LATE.');
-  g.st[d.drug]+=n; g.Z-=n*b.price;
+  if(!await act('buydeal',{id:d.id,units:n})) await say('TOO LATE.');
 }
 async function buy(){
-  const i=await pick(['WHAT TO BUY?'],[...priceItems(),'PLAYER DEALS'],{title:true,cancel:true}); if(i<0) return;
+  const i=await pick(['WHAT TO BUY?'],[...priceItems(g.prices),'PLAYER DEALS'],{title:true,cancel:true}); if(i<0) return;
   if(i===6) return buyDeal();
-  const afford=int(g.Z/g.pr[i]);
-  const n=await askNum(['YOU CAN AFFORD:',String(afford).padStart(COLS),'YOU CAN HOLD:',String(free()).padStart(COLS),'HOW MUCH?'],Math.min(afford,free()));
+  const afford=int(g.cash/g.prices[i]);
+  const n=await askNum(['YOU CAN AFFORD:',String(afford).padStart(COLS),'YOU CAN HOLD:',String(g.free).padStart(COLS),'HOW MUCH?'],Math.min(afford,g.free));
   if(!n) return;
-  if(n>afford||n>free()) return;
-  g.st[i]+=n; g.Z-=n*g.pr[i];
+  if(n>afford||n>g.free) return;
+  await act('buy',{drug:i,n});
 }
 async function postDeal(){
   const have=DRUGS.map((d,i)=>i).filter(i=>g.st[i]>0);
@@ -340,72 +308,79 @@ async function postDeal(){
   if(!n||n>g.st[i]||n>100) return;
   const pr=await askNum(['PRICE EACH?'],null);
   if(!pr) return;
-  if(!await api('/api/deals',{code:getCode(),city:g.loc,drug:i,units:n,price:pr})) return say('NO DEAL.');
-  g.st[i]-=n;
+  if(!await act('post',{drug:i,units:n,price:pr})) await say('NO DEAL.');
 }
 async function sell(){
-  const i=await pick(['WHAT TO SELL?'],[...priceItems(),'POST A DEAL'],{title:true,cancel:true}); if(i<0) return;
+  const i=await pick(['WHAT TO SELL?'],[...priceItems(g.sell),'POST A DEAL'],{title:true,cancel:true}); if(i<0) return;
   if(i===6) return postDeal();
   const n=await askNum(['YOU HAVE:',String(g.st[i]).padStart(COLS),'HOW MUCH?'],g.st[i]);
   if(!n) return;
   if(n>g.st[i]) return;
-  g.st[i]-=n; g.Z+=n*g.pr[i];
+  await act('sell',{drug:i,n});
 }
 async function loanShark(){
   if(g.loc!==0) return say("THE LOAN SHARK ONLY DEALS IN THE BRONX.");
   const c=await pick(['LOAN SHARK...'],['REPAY','BORROW'],{title:true,cancel:true}); if(c<0) return;
-  const n=await askNum([`YOU OWE: $${g.Y}`,`CASH: $${g.Z}`,'HOW MUCH?'],c===0?Math.min(g.Z,g.Y):5000);
-  if(n===null) return;
-  if(c===0){ if(n>g.Z||n>g.Y) return; g.Y-=n; g.Z-=n }
-  else { if(n>5000) return say("YOU THINK HE'S CRAZY, MAN?!"); g.Y+=n; g.Z+=n }
+  const n=await askNum([`YOU OWE: $${g.debt}`,`CASH: $${g.cash}`,'HOW MUCH?'],c===0?Math.min(g.cash,g.debt):5000);
+  if(!n) return;
+  if(c===0){ if(n>g.cash||n>g.debt) return; await act('loan',{kind:'repay',n}) }
+  else { if(n>5000) return say("YOU THINK HE'S CRAZY, MAN?!"); await act('loan',{kind:'borrow',n}) }
 }
 async function bank(){
   if(g.loc!==0) return say("THE BANK IS IN THE BRONX.");
-  const paid=(await api('/api/bank/claim',{code:getCode()}))?.owed||0;
-  if(paid){g.V+=paid; await saveBank(g.V); await say(`YOUR DEALS PAID YOU $${paid}`)}
+  await act('collect');
   for(;;){
-    const c=await pick([' BANK '],['VIEW ACCOUNT','DEPOSIT','WITHDRAW','CODE'],{title:true,cancel:true});
+    const c=await pick([' BANK '],['VIEW ACCOUNT','DEPOSIT','WITHDRAW','CODE','NAME','BOARD'],{title:true,cancel:true});
     if(c<0) return;
-    if(c===0){await say(`BALANCE: $${g.V}`);continue}
+    if(c===0){await say(`${(NAME||'').toUpperCase()}\nBALANCE: $${V}`);continue}
     if(c===3){
       copyable(1,getCode()); await say(`YOUR BANK CODE:\n${getCode()}`); uncopyable();
       if(!await yesNo('USE ANOTHER CODE?')) continue;
       const n=await askNum(['ENTER THE CODE:'],null); if(n===null) continue;
       const r=await api('/api/bank?code='+n);
       if(!r){await say('NO SUCH BANK.');continue}
-      setCode(r.code); g.V=r.balance; continue;
+      setCode(r.code); NAME=r.name; await loadRun(); return;
     }
-    const n=await askNum([`BALANCE: $${g.V}`,`CASH: $${g.Z}`,'HOW MUCH?'],c===1?g.Z:g.V); if(n===null) continue;
-    if(c===1){ if(n>g.Z) continue; g.V+=n; g.Z-=n }
-    else { if(n>g.V) continue; g.V-=n; g.Z+=n }
-    await saveBank(g.V);
+    if(c===4){
+      const r=await api('/api/name',{code:getCode()});
+      if(r){NAME=r.name; await say(`YOU ARE NOW:\n${NAME.toUpperCase()}`)}
+      continue;
+    }
+    if(c===5){
+      const r=await api('/api/board');
+      if(!r||!r.board.length){await say('NOBODY IS ON TODAY\'S BOARD YET.');continue}
+      await say("TODAY'S BEST:\n\n"+r.board.map((e,i)=>`${i+1} ${e.name.toUpperCase()}\n  $${e.money}`).join('\n'));
+      continue;
+    }
+    const n=await askNum([`BALANCE: $${V}`,`CASH: $${g.cash}`,'HOW MUCH?'],c===1?g.cash:V); if(n===null) continue;
+    if(c===1){ if(n>g.cash) continue; await act('bank',{kind:'deposit',n}) }
+    else { if(n>V) continue; await act('bank',{kind:'withdraw',n}) }
   }
 }
 
 async function game(){
-  g={Z:2000,Y:5000,V:await loadBank(),T:100,B:1,I:0,J:0,st:[0,0,0,0,0,0],pr:[],loc:0};
+  for(;;){ // the street has to be reachable
+    if(await loadBank()&&await loadRun()) break;
+    await say("CAN'T REACH THE STREET. TRY AGAIN LATER.");
+  }
   await say("J.M.'S DRUGWAR\nVERSION 2.00\n\nJUST SAY NO.");
-  let dead=(await newDay())==='dead';
-  while(!dead){
+  await settle();
+  while(!g.over){
     const c=await pick(['DRUGWAR!'],['SEE PRICES','TRENCHCOAT','BUY','SELL','JET','SEE LOAN SHARK','VISIT BANK'],{title:true});
-    if(c===0) await show([PLACES[g.loc],...DRUGS.map((d,i)=>d.padEnd(9)+('$'+g.pr[i]).padStart(7)),`DAY ${g.B}  $${g.Z}`],true);
-    else if(c===1) await show(['TRENCHCOAT',...DRUGS.map((d,i)=>d.padEnd(9)+String(g.st[i]).padStart(7)),`GUNS ${g.I}  FREE ${free()}`],true);
+    if(c===0) await show([PLACES[g.loc],...DRUGS.map((d,i)=>d.padEnd(9)+('$'+g.prices[i]).padStart(7)),`DAY ${g.move}  $${g.cash}`],true);
+    else if(c===1) await show(['TRENCHCOAT',...DRUGS.map((d,i)=>d.padEnd(9)+String(g.st[i]).padStart(7)),`GUNS ${g.guns}  FREE ${g.free}`],true);
     else if(c===2) await buy();
     else if(c===3) await sell();
     else if(c===4){
       const p=await pick(['WHERE TO, DUDE?'],[...PLACES,'OOPS... STAY!'],{title:true,cancel:true});
       if(p<0||p===6) continue;
-      g.loc=p; g.B++; g.Y=int(g.Y*1.1); g.V=int(g.V*1.06);
-      if(g.B>=31) break;
-      dead=(await newDay())==='dead';
+      if(!await act('jet',{to:p})) continue;
+      if(!g.over){ await showNews(); await settle() }
     }
     else if(c===5) await loanShark();
     else await bank();
   }
-  await saveBank(g.V);
-  const total=g.V+g.Z-g.Y;
-  const score=total<=0?0:Math.min(100,round(Math.sqrt(total/31.5)));
-  await show([' GAME OVER!','YOUR SCORE (ON A','SCALE OF 1 TO','100)=',String(score).padStart(COLS),`CASH $${g.Z}`,`BANK $${g.V}`,`DEBT $${g.Y}`]);
+  await show([' GAME OVER!','YOUR SCORE (ON A','SCALE OF 1 TO','100)=',String(g.score).padStart(COLS),`CASH $${g.cash}`,`BANK $${V}`,`DEBT $${g.debt}`]);
   return (await pick(['PLAY AGAIN?'],['YES','NO']))===0;
 }
 
