@@ -2,6 +2,15 @@
 
 Newest first. Full details are kept privately.
 
+## v2.0.0 (Oct 28)
+- Added: everyone sees the same prices in each city, and they change every hour. When people buy a lot a price goes up, and when they sell it goes down, then it drifts back.
+- Added: the street buys back for less than it sells for, so a deal between players can beat it.
+- Added: a random dealer name for every bank, and a daily board of the best runs (NAME and BOARD in VISIT BANK).
+- Added: a run nobody has moved in for 6 hours ends.
+- Changed: the game now runs on the server, so cash and drugs can't be faked. Your bank still carries up to $50,000 into your next game.
+- Changed: new banks are limited to 3 a day from one place.
+- Removed: price events that were different for every player (everyone in a city now sees the same ones).
+
 ## v1.5.0 (Oct 26)
 - Added: you can post your own deals in SELL, and see other players' deals in BUY. Money from your sales waits for you in VISIT BANK.
 - Added: you can copy your bank code.
