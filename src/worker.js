@@ -14,6 +14,10 @@
 // anything, so the page can't claim cash or drugs it doesn't have. The bank balance is the only thing that outlives
 // a run. Muggings, chases and finds are rolled here, not in the page.
 //
+// PRICES are shared. The street (the world's prices) is worked out on demand from the hour and a secret only the Worker
+// knows (env.PRICE_SECRET), so everyone sees the same prices in a city, nobody can work out the next hour's, and nothing
+// is stored. Street trades push a price (drugwars_trades); the push fades by itself and is capped at +/-50%.
+//
 // Every action is one atomic D1 batch. A request names the run version it saw (`ver`); the batch only goes through
 // if the run is still at that version, so a double-sent or replayed request can't be applied twice.
 
@@ -23,6 +27,14 @@ const MAX_PRICE = 150000; // per unit (the top of the original game's price spik
 const MAX_OPEN = 5;       // deals one bank can have up at once
 const LIFE = 86400;       // a deal stays up this long (seconds)
 const SHOW = 6;           // deals shown per city
+
+const PERIOD = 3600;      // the street's prices change this often (seconds)
+const SELL_BACK = 0.7;    // the street buys back at this share of what it sells for
+const PUSH_UNITS = 400;   // units traded in one city that move a drug's price by 100%
+const PUSH_FADE = 0.85;   // how much of a trade's push is left an hour later
+const PUSH_HOURS = 24;    // trades older than this no longer count
+const PUSH_CAP = 0.5;     // a price never moves more than this far from the street's own price
+const NEW_BANKS_A_DAY = 3; // per internet address
 
 const MOVES = 30;         // a run ends when the move counter reaches 31, like the original's day 31
 const START_CASH = 2000, START_DEBT = 5000, START_COAT = 100;
@@ -138,9 +150,52 @@ async function deals(req, env, url) {
 const carried = (g) => g.st.reduce((a, b) => a + b, 0);
 const free = (g) => g.coat - carried(g);
 
-function rollPrices(g) {
-  g.pr = [round(R() * 12000 + 16000), round(R() * 7000 + 5000), round(R() * 34 + 10) * 100,
-          round(R() * 42 + 33) * 10, round(R() * 15 + 7) * 10, round(R() * 4 + 1) * 10];
+// ---------- the street ----------
+
+// a number in [0, 1) that only the Worker can work out
+async function uniform(env, what) {
+  if (!env.PRICE_SECRET) throw new Error("PRICE_SECRET is not set");
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.PRICE_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(what)));
+  return new DataView(mac.buffer).getUint32(0) / 4294967296;
+}
+
+// the original's price ranges, for u in [0, 1)
+const BASE = [(u) => round(u * 12000 + 16000), (u) => round(u * 7000 + 5000), (u) => round(u * 34 + 10) * 100,
+              (u) => round(u * 42 + 33) * 10, (u) => round(u * 15 + 7) * 10, (u) => round(u * 4 + 1) * 10];
+
+// price events, with the original's wording; each hour the street picks a few of them for a few cities
+const EVENTS = [
+  { drug: 5, mult: 0.2, text: "RIVAL DEALERS ARE SELLING CHEAP LUDES!!!" },
+  { drug: 3, mult: 0.2, text: "WEED PRICES HAVE BOTTOMED-OUT!!!" },
+  { drug: 1, mult: 0.2, text: "PIGS ARE SELLING CHEAP HEROINE FROM LAST WEEK'S RAID!!!!" },
+  { drug: 1, mult: 3, text: "ADDICTS ARE BUYING HEROINE AT OUTRAGEOUS PRICES!!!" },
+  { drug: 0, mult: 3, text: "PIGS MADE A BIG COKE BUST! PRICES ARE OUTRAGEOUS!!!!" },
+  { drug: 2, mult: 0.2, text: "THE MARKET HAS BEEN FLOODED WITH CHEAP HOME-MADE ACID!!!!" },
+];
+const EVENTS_PER_PERIOD = 3;
+
+// The street in one city right now: what it sells at, what it buys back at, and the news. { buy[6], sell[6], news[] }
+async function street(env, city) {
+  const period = int(now() / PERIOD);
+  const mult = [1, 1, 1, 1, 1, 1], news = [];
+  for (let k = 0; k < EVENTS_PER_PERIOD; k++) {
+    const e = EVENTS[int((await uniform(env, `event:${period}:${k}:kind`)) * EVENTS.length)];
+    if (int((await uniform(env, `event:${period}:${k}:city`)) * 6) !== city) continue;
+    mult[e.drug] *= e.mult; news.push(e.text);
+  }
+  const { results } = await env.DB.prepare("SELECT period, drug, net FROM drugwars_trades WHERE city = ? AND period > ?").bind(city, period - PUSH_HOURS).all();
+  const push = [0, 0, 0, 0, 0, 0];
+  for (const r of results) push[r.drug] += r.net * PUSH_FADE ** (period - r.period);
+  if (Math.random() < 0.02) await env.DB.prepare("DELETE FROM drugwars_trades WHERE period <= ?").bind(period - PUSH_HOURS).run();
+  const buy = [], sell = [];
+  for (let d = 0; d < 6; d++) {
+    const base = BASE[d](await uniform(env, `price:${period}:${city}:${d}`));
+    const pushed = Math.min(1 + PUSH_CAP, Math.max(1 - PUSH_CAP, 1 + push[d] / PUSH_UNITS));
+    buy.push(Math.min(MAX_PRICE, Math.max(1, round(base * mult[d] * pushed))));
+    sell.push(Math.max(1, int(buy[d] * SELL_BACK)));
+  }
+  return { buy, sell, news };
 }
 
 // the score the original shows: total money on a scale of 1 to 100
@@ -185,16 +240,10 @@ function chaseAct(g, a, msgs) {
   return fire(g, msgs);
 }
 
-// a new day's prices and whatever happens in it. Sets g.pending if the player has to answer something.
+// whatever happens on a new turn (the prices come from the street). Sets g.pending if the player has to answer something.
 function newDay(g, msgs) {
-  rollPrices(g);
   const D = round(R() * 20);
   switch (D) {
-    case 1: g.pr[5] = 2; msgs.push("RIVAL DEALERS ARE SELLING CHEAP LUDES!!!"); break;
-    case 2: g.pr[3] = 122; msgs.push("WEED PRICES HAVE BOTTOMED-OUT!!!"); break;
-    case 3: g.pr[1] = int(850 + R() * 1150); msgs.push("PIGS ARE SELLING CHEAP HEROINE FROM LAST WEEK'S RAID!!!!"); break;
-    case 4: case 5: g.pr[1] = int(18000 + R() * 25000); msgs.push("ADDICTS ARE BUYING HEROINE AT OUTRAGEOUS PRICES!!!"); break;
-    case 6: case 7: g.pr[0] = int(80000 + R() * 60000); msgs.push("PIGS MADE A BIG COKE BUST! PRICES ARE OUTRAGEOUS!!!!"); break;
     case 8: g.cash = 2 * int(g.cash / 3); msgs.push("YOU WERE MUGGED IN THE SUBWAY!"); break;
     case 9: case 10: case 11:
       if (carried(g) >= 50) chaseStart(g, { 9: 1, 10: 3, 11: 4 }[D], msgs);
@@ -210,7 +259,6 @@ function newDay(g, msgs) {
         g.st[i] += X; msgs.push(`YOU FOUND: ${X} UNITS OF: ${DRUGS[i]} ON A DEAD DUDE IN THE SUBWAY!!!`);
       }
       break;
-    case 17: g.pr[2] = int(250 + R() * 550); msgs.push("THE MARKET HAS BEEN FLOODED WITH CHEAP HOME-MADE ACID!!!!"); break;
   }
 }
 
@@ -218,32 +266,36 @@ function newDay(g, msgs) {
 
 const parse = (r) => ({
   id: r.id, bank: r.bank, ver: r.ver, state: r.state, move: r.move, loc: r.loc, cash: r.cash, debt: r.debt, coat: r.coat,
-  guns: r.guns, damage: r.damage, st: JSON.parse(r.st), pr: JSON.parse(r.prices),
+  guns: r.guns, damage: r.damage, st: JSON.parse(r.st),
   pending: r.pending ? JSON.parse(r.pending) : null, score: r.score,
 });
 
-const view = (g, balance, msgs) => ({
-  run: { ver: g.ver, move: g.move, loc: g.loc, cash: g.cash, debt: g.debt, coat: g.coat, free: free(g), guns: g.guns, damage: g.damage,
-         st: g.st, prices: g.pr, pending: g.pending, over: g.state === "over", score: g.score },
-  balance, msgs,
-});
+// prices = what the street sells at where you are, sell = what it pays you, news = its price events here
+const view = async (env, g, balance, msgs) => {
+  const s = await street(env, g.loc);
+  return {
+    run: { ver: g.ver, move: g.move, loc: g.loc, cash: g.cash, debt: g.debt, coat: g.coat, free: free(g), guns: g.guns, damage: g.damage,
+           st: g.st, prices: s.buy, sell: s.sell, news: s.news, pending: g.pending, over: g.state === "over", score: g.score },
+    balance, msgs,
+  };
+};
 
 async function runLook(req, env, url) {
   const code = codeOf(url.searchParams.get("code"));
   const bank = await needBank(env, code);
   const row = await env.DB.prepare("SELECT * FROM drugwars_runs WHERE bank = ? AND state = 'live'").bind(code).first();
-  return json(row ? view(parse(row), bank.balance, []) : { run: null, balance: bank.balance, msgs: [] });
+  return json(row ? await view(env, parse(row), bank.balance, []) : { run: null, balance: bank.balance, msgs: [] });
 }
 
 async function runStart(req, env) {
   const code = codeOf((await json_(req)).code);
   const bank = await needBank(env, code);
   const live = await env.DB.prepare("SELECT * FROM drugwars_runs WHERE bank = ? AND state = 'live'").bind(code).first();
-  if (live) return json(view(parse(live), bank.balance, []));
+  if (live) return json(await view(env, parse(live), bank.balance, []));
   if (!(await rateLimit(env, req, "start-run", 30, 3600))) throw new Oops("Too many runs from here. Try again later.", 429);
 
   const g = { ver: 0, state: "live", move: 1, loc: 0, cash: START_CASH, debt: START_DEBT, coat: START_COAT, guns: 0, damage: 0,
-              st: [0, 0, 0, 0, 0, 0], pr: [], pending: null, score: null };
+              st: [0, 0, 0, 0, 0, 0], pending: null, score: null };
   const msgs = [];
   newDay(g, msgs);
   const t = now();
@@ -251,18 +303,25 @@ async function runStart(req, env) {
   try {
     const r = await env.DB.prepare(
       `INSERT INTO drugwars_runs (bank, state, ver, move, loc, cash, debt, coat, guns, damage, st, prices, pending, score, started_at, updated_at)
-       VALUES (?, 'live', 0, 1, 0, ?, ?, ?, 0, 0, ?, ?, ?, NULL, ?, ?) RETURNING id`)
-      .bind(code, g.cash, g.debt, g.coat, JSON.stringify(g.st), JSON.stringify(g.pr), g.pending ? JSON.stringify(g.pending) : null, t, t).first();
+       VALUES (?, 'live', 0, 1, 0, ?, ?, ?, 0, 0, ?, '[]', ?, NULL, ?, ?) RETURNING id`)
+      .bind(code, g.cash, g.debt, g.coat, JSON.stringify(g.st), g.pending ? JSON.stringify(g.pending) : null, t, t).first();
     id = r.id;
   } catch (e) { // another request started one at the same moment (the unique index): use that one
     const again = await env.DB.prepare("SELECT * FROM drugwars_runs WHERE bank = ? AND state = 'live'").bind(code).first();
     if (!again) throw e;
-    return json(view(parse(again), bank.balance, []));
+    return json(await view(env, parse(again), bank.balance, []));
   }
   g.id = id;
   await env.DB.prepare("INSERT INTO drugwars_log (run, bank, move, kind, amount, cash_after, at) VALUES (?, ?, 1, 'start', 0, ?, ?)").bind(id, code, g.cash, t).run();
-  return json(view(g, bank.balance, msgs));
+  return json(await view(env, g, bank.balance, msgs));
 }
+
+// a street trade pushes that drug's price in that city: buying up, selling down (it fades, see PUSH_FADE)
+const pushPrice = (city, drug, units) => ({
+  sql: `INSERT INTO drugwars_trades (period, city, drug, net) SELECT ?, ?, ?, ? WHERE (SELECT changes()) = 1
+        ON CONFLICT (period, city, drug) DO UPDATE SET net = net + excluded.net`,
+  args: [int(now() / PERIOD), city, drug, units],
+});
 
 // run `fn` on a copy of the live run and commit the result as one atomic batch
 async function runAct(req, env) {
@@ -292,16 +351,18 @@ async function runAct(req, env) {
   let died = false, ends = false;
   switch (a) {
     case "buy": {
-      const i = whole(b.drug, 0, 5), n = whole(b.n, 1, 100000), cost = n * g.pr[i];
+      const i = whole(b.drug, 0, 5), n = whole(b.n, 1, 100000), cost = n * (await street(env, g.loc)).buy[i];
       if (cost > g.cash) throw new Oops("Not enough cash.");
       if (n > free(g)) throw new Oops("Not enough room.");
       g.st[i] += n; g.cash -= cost; fx.drug = i; fx.qty = n;
+      fx.post = pushPrice(g.loc, i, n);
       break;
     }
     case "sell": {
       const i = whole(b.drug, 0, 5), n = whole(b.n, 1, 100000);
       if (n > g.st[i]) throw new Oops("You don't have that much.");
-      g.st[i] -= n; g.cash += n * g.pr[i]; fx.drug = i; fx.qty = n;
+      g.st[i] -= n; g.cash += n * (await street(env, g.loc)).sell[i]; fx.drug = i; fx.qty = n;
+      fx.post = pushPrice(g.loc, i, -n);
       break;
     }
     case "jet": {
@@ -401,9 +462,9 @@ async function runAct(req, env) {
   if (fx.pre) stmts.push(env.DB.prepare(fx.pre.sql).bind(...fx.pre.args));
   const runIdx = stmts.length;
   stmts.push(env.DB.prepare(
-    `UPDATE drugwars_runs SET state = ?, ver = ver + 1, move = ?, loc = ?, cash = ?, debt = ?, coat = ?, guns = ?, damage = ?, st = ?, prices = ?, pending = ?, score = ?, updated_at = ?
+    `UPDATE drugwars_runs SET state = ?, ver = ver + 1, move = ?, loc = ?, cash = ?, debt = ?, coat = ?, guns = ?, damage = ?, st = ?, pending = ?, score = ?, updated_at = ?
      WHERE id = ? AND ver = ?${fx.pre ? " AND (SELECT changes()) = 1" : ""}`)
-    .bind(g.state, g.move, g.loc, g.cash, g.debt, g.coat, g.guns, g.damage, JSON.stringify(g.st), JSON.stringify(g.pr),
+    .bind(g.state, g.move, g.loc, g.cash, g.debt, g.coat, g.guns, g.damage, JSON.stringify(g.st),
           g.pending ? JSON.stringify(g.pending) : null, g.score, t, g.id, g.ver));
   stmts.push(env.DB.prepare(
     "INSERT INTO drugwars_log (run, bank, move, kind, drug, qty, amount, cash_after, at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (SELECT changes()) = 1")
@@ -414,5 +475,5 @@ async function runAct(req, env) {
 
   g.ver++;
   const after = await env.DB.prepare("SELECT balance FROM drugwars_banks WHERE code = ?").bind(code).first();
-  return json(view(g, after.balance, msgs));
+  return json(await view(env, g, after.balance, msgs));
 }
