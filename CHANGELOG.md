@@ -2,6 +2,10 @@
 
 Newest first. Full details are kept privately.
 
+## v2.2.0 (Oct 28)
+- Added: once an hour the game locks in every bank's newest history line in one overall fingerprint. If someone cuts lines off the end of a bank's history, the check now fails.
+- Added: the hourly fingerprints can be read from the server.
+
 ## v2.1.0 (Oct 28)
 - Added: every bank's history is now a tamper-proof log. Each line is locked to the one before it, so if anyone edits an old line, the check fails.
 - Added: a way to check a bank's history from the server.

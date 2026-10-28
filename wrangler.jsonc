@@ -9,6 +9,8 @@
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"]
   },
+  // once an hour: fold every bank's newest log hash into one checkpoint (scheduled() in src/worker.js)
+  "triggers": { "crons": ["0 * * * *"] },
   // The banks live in the moba-beat database; every table is named drugwars_...
   "d1_databases": [
     {

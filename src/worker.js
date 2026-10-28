@@ -1,9 +1,10 @@
-// Drugwar Worker (v2.1.0). The page is a static asset; /api/* comes here first.
+// Drugwar Worker (v2.2.0). The page is a static asset; /api/* comes here first.
 //
 //   POST /api/bank/new                   make a bank: { code, balance: 0 }
 //   GET  /api/bank?code=12345678         look a bank up: { code, balance, name }, or 404
 //   POST /api/name {code}                reroll the bank's name (names can't be typed): { name }
 //   GET  /api/ledger?code=C              replay a bank's log chain: { ok, lines, chained, unchained, head } (ok is false if a line was edited)
+//   GET  /api/checkpoints                the last 24 hourly checkpoints of all the chains: { checkpoints: [{ hour, banks, lines, prev_root, root }] }
 //   GET  /api/board                      today's best runs, by money at the end: { board: [{ name, money }] }
 //   GET  /api/deals?city=N&code=C        the deals that are up in city N (0..5), newest first: { deals: [{ id, drug, units, price, mine }] }
 //   GET  /api/run?code=C                 the bank's live run, if it has one: { run, balance, msgs: [] }
@@ -25,7 +26,7 @@
 // if the run is still at that version, so a double-sent or replayed request can't be applied twice.
 
 import { giveName } from "./names.js";
-import { head, recordOf, isUnique, verify } from "./ledger.js";
+import { head, recordOf, isUnique, verify, verifyCheckpoints, checkpoint } from "./ledger.js";
 
 const CAP = 50000; // the most a bank holds
 const MAX_UNITS = 100;    // one deal, and one purchase
@@ -63,6 +64,10 @@ export default {
       return json({ error: "Something broke." }, 500);
     }
   },
+  // the hourly cron (wrangler.jsonc): fold every bank's newest log hash into one root
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(checkpoint(env));
+  },
 };
 
 class Oops extends Error {
@@ -70,7 +75,7 @@ class Oops extends Error {
 }
 
 const ROUTES = {
-  "POST /api/bank/new": make, "GET /api/bank": look, "POST /api/name": rename, "GET /api/board": board, "GET /api/ledger": ledger,
+  "POST /api/bank/new": make, "GET /api/bank": look, "POST /api/name": rename, "GET /api/board": board, "GET /api/ledger": ledger, "GET /api/checkpoints": checkpoints,
   "GET /api/deals": deals,
   "GET /api/run": runLook, "POST /api/run/start": runStart, "POST /api/run/act": runAct,
 };
@@ -153,7 +158,13 @@ async function ledger(req, env, url) {
   if (!(await rateLimit(env, req, "ledger", 30, 3600))) throw new Oops("Too many tries. Try again later.", 429);
   const code = codeOf(url.searchParams.get("code"));
   await needBank(env, code);
-  return json(await verify(env.DB, code));
+  const chain = await verify(env.DB, code), cp = await verifyCheckpoints(env.DB, code);
+  return json({ ...chain, ok: chain.ok && cp.ok, checkpoints: cp.checkpoints, ...(cp.ok ? {} : { broken_checkpoint: cp.broken_at }) });
+}
+
+async function checkpoints(req, env) {
+  const { results } = await env.DB.prepare("SELECT hour, banks, lines, prev_root, root FROM drugwars_checkpoints ORDER BY hour DESC LIMIT 24").all();
+  return json({ checkpoints: results });
 }
 
 // today's best runs (UTC day), by money at the end
