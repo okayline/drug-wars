@@ -184,25 +184,26 @@ async function uniform(env, what) {
 const BASE = [(u) => round(u * 12000 + 16000), (u) => round(u * 7000 + 5000), (u) => round(u * 34 + 10) * 100,
               (u) => round(u * 42 + 33) * 10, (u) => round(u * 15 + 7) * 10, (u) => round(u * 4 + 1) * 10];
 
-// price events, with the original's wording; each hour the street picks a few of them for a few cities
+// price events, as in the original: wording and the price a drug is set to (u is in [0, 1)); each hour the street
+// picks a few of them for a few cities
 const EVENTS = [
-  { drug: 5, mult: 0.2, text: "RIVAL DEALERS ARE SELLING CHEAP LUDES!!!" },
-  { drug: 3, mult: 0.2, text: "WEED PRICES HAVE BOTTOMED-OUT!!!" },
-  { drug: 1, mult: 0.2, text: "PIGS ARE SELLING CHEAP HEROINE FROM LAST WEEK'S RAID!!!!" },
-  { drug: 1, mult: 3, text: "ADDICTS ARE BUYING HEROINE AT OUTRAGEOUS PRICES!!!" },
-  { drug: 0, mult: 3, text: "PIGS MADE A BIG COKE BUST! PRICES ARE OUTRAGEOUS!!!!" },
-  { drug: 2, mult: 0.2, text: "THE MARKET HAS BEEN FLOODED WITH CHEAP HOME-MADE ACID!!!!" },
+  { drug: 5, text: "RIVAL DEALERS ARE SELLING CHEAP LUDES!!!", price: () => 2 },
+  { drug: 3, text: "WEED PRICES HAVE BOTTOMED-OUT!!!", price: () => 122 },
+  { drug: 1, text: "PIGS ARE SELLING CHEAP HEROINE FROM LAST WEEK'S RAID!!!!", price: (u) => int(850 + u * 1150) },
+  { drug: 1, text: "ADDICTS ARE BUYING HEROINE AT OUTRAGEOUS PRICES!!!", price: (u) => int(18000 + u * 25000) },
+  { drug: 0, text: "PIGS MADE A BIG COKE BUST! PRICES ARE OUTRAGEOUS!!!!", price: (u) => int(80000 + u * 60000) },
+  { drug: 2, text: "THE MARKET HAS BEEN FLOODED WITH CHEAP HOME-MADE ACID!!!!", price: (u) => int(250 + u * 550) },
 ];
 const EVENTS_PER_PERIOD = 3;
 
 // The street in one city right now: what it sells at, what it buys back at, and the news. { buy[6], sell[6], news[] }
 async function street(env, city) {
   const period = int(now() / PERIOD);
-  const mult = [1, 1, 1, 1, 1, 1], news = [];
+  const set = [], news = [];
   for (let k = 0; k < EVENTS_PER_PERIOD; k++) {
     const e = EVENTS[int((await uniform(env, `event:${period}:${k}:kind`)) * EVENTS.length)];
     if (int((await uniform(env, `event:${period}:${k}:city`)) * 6) !== city) continue;
-    mult[e.drug] *= e.mult; news.push(e.text);
+    set[e.drug] = e.price(await uniform(env, `event:${period}:${k}:size`)); news.push(e.text);
   }
   const { results } = await env.DB.prepare("SELECT period, drug, net FROM drugwars_trades WHERE city = ? AND period > ?").bind(city, period - PUSH_HOURS).all();
   const push = [0, 0, 0, 0, 0, 0];
@@ -210,9 +211,9 @@ async function street(env, city) {
   if (Math.random() < 0.02) await env.DB.prepare("DELETE FROM drugwars_trades WHERE period <= ?").bind(period - PUSH_HOURS).run();
   const buy = [], sell = [];
   for (let d = 0; d < 6; d++) {
-    const base = BASE[d](await uniform(env, `price:${period}:${city}:${d}`));
+    const base = set[d] ?? BASE[d](await uniform(env, `price:${period}:${city}:${d}`));
     const pushed = Math.min(1 + PUSH_CAP, Math.max(1 - PUSH_CAP, 1 + push[d] / PUSH_UNITS));
-    buy.push(Math.min(MAX_PRICE, Math.max(1, round(base * mult[d] * pushed))));
+    buy.push(Math.min(MAX_PRICE, Math.max(1, round(base * pushed))));
     sell.push(Math.max(1, int(buy[d] * SELL_BACK)));
   }
   return { buy, sell, news };

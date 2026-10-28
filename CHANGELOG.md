@@ -2,6 +2,9 @@
 
 Newest first. Full details are kept privately.
 
+## v2.0.1 (Oct 28)
+- Changed: price events now set the same prices as the original game: cheap heroine $850 to $2,000, heroine at $18,000 to $43,000, a coke bust at $80,000 to $140,000, acid flood $250 to $800, ludes at $2 and weed at $122. They were milder before.
+
 ## v2.0.0 (Oct 28)
 - Added: everyone sees the same prices in each city, and they change every hour. When people buy a lot a price goes up, and when they sell it goes down, then it drifts back.
 - Added: the street buys back for less than it sells for, so a deal between players can beat it.
