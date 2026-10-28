@@ -215,7 +215,7 @@ function askNum(lines,max){ // like Input
 const DRUGS=['COCAINE','HEROINE','ACID','WEED','SPEED','LUDES'];
 const PLACES=['BRONX','GHETTO','CENTRAL PARK','MANHATTEN','CONEY ISLAND','BROOKLYN'];
 const int=Math.floor;
-let g,V; // g = the run as the server last sent it, V = the bank balance
+let g,V,NAME; // g = the run as the server last sent it, V = the bank balance, NAME = this bank's random name
 const CODE_KEY='dw-code'; // this browser's bank code; the balance itself lives on the server
 const getCode=()=>{try{return localStorage.getItem(CODE_KEY)}catch(e){return null}};
 const setCode=c=>{try{localStorage.setItem(CODE_KEY,c)}catch(e){}};
@@ -228,6 +228,7 @@ async function api(path,body){
 async function loadBank(){ // the bank for this browser's code; makes one the first time
   let c=getCode(),r=c&&await api('/api/bank?code='+c);
   if(!r){r=await api('/api/bank/new',{}); if(r) setCode(r.code)}
+  if(r) NAME=r.name;
   return r;
 }
 function take(r){g=r.run;V=r.balance}
@@ -329,16 +330,27 @@ async function bank(){
   if(g.loc!==0) return say("THE BANK IS IN THE BRONX.");
   await act('collect');
   for(;;){
-    const c=await pick([' BANK '],['VIEW ACCOUNT','DEPOSIT','WITHDRAW','CODE'],{title:true,cancel:true});
+    const c=await pick([' BANK '],['VIEW ACCOUNT','DEPOSIT','WITHDRAW','CODE','NAME','BOARD'],{title:true,cancel:true});
     if(c<0) return;
-    if(c===0){await say(`BALANCE: $${V}`);continue}
+    if(c===0){await say(`${(NAME||'').toUpperCase()}\nBALANCE: $${V}`);continue}
     if(c===3){
       copyable(1,getCode()); await say(`YOUR BANK CODE:\n${getCode()}`); uncopyable();
       if(!await yesNo('USE ANOTHER CODE?')) continue;
       const n=await askNum(['ENTER THE CODE:'],null); if(n===null) continue;
       const r=await api('/api/bank?code='+n);
       if(!r){await say('NO SUCH BANK.');continue}
-      setCode(r.code); await loadRun(); return;
+      setCode(r.code); NAME=r.name; await loadRun(); return;
+    }
+    if(c===4){
+      const r=await api('/api/name',{code:getCode()});
+      if(r){NAME=r.name; await say(`YOU ARE NOW:\n${NAME.toUpperCase()}`)}
+      continue;
+    }
+    if(c===5){
+      const r=await api('/api/board');
+      if(!r||!r.board.length){await say('NOBODY IS ON TODAY\'S BOARD YET.');continue}
+      await say("TODAY'S BEST:\n\n"+r.board.map((e,i)=>`${i+1} ${e.name.toUpperCase()}\n  $${e.money}`).join('\n'));
+      continue;
     }
     const n=await askNum([`BALANCE: $${V}`,`CASH: $${g.cash}`,'HOW MUCH?'],c===1?g.cash:V); if(n===null) continue;
     if(c===1){ if(n>g.cash) continue; await act('bank',{kind:'deposit',n}) }

@@ -1,7 +1,9 @@
 // Drugwar Worker (v2.0.0). The page is a static asset; /api/* comes here first.
 //
 //   POST /api/bank/new                   make a bank: { code, balance: 0 }
-//   GET  /api/bank?code=12345678         look a bank up: { code, balance }, or 404
+//   GET  /api/bank?code=12345678         look a bank up: { code, balance, name }, or 404
+//   POST /api/name {code}                reroll the bank's name (names can't be typed): { name }
+//   GET  /api/board                      today's best runs, by money at the end: { board: [{ name, money }] }
 //   GET  /api/deals?city=N&code=C        the deals that are up in city N (0..5), newest first: { deals: [{ id, drug, units, price, mine }] }
 //   GET  /api/run?code=C                 the bank's live run, if it has one: { run, balance, msgs: [] }
 //   POST /api/run/start {code}           start a run (or pick up the live one)
@@ -20,6 +22,8 @@
 //
 // Every action is one atomic D1 batch. A request names the run version it saw (`ver`); the batch only goes through
 // if the run is still at that version, so a double-sent or replayed request can't be applied twice.
+
+import { giveName } from "./names.js";
 
 const CAP = 50000; // the most a bank holds
 const MAX_UNITS = 100;    // one deal, and one purchase
@@ -63,7 +67,7 @@ class Oops extends Error {
 }
 
 const ROUTES = {
-  "POST /api/bank/new": make, "GET /api/bank": look,
+  "POST /api/bank/new": make, "GET /api/bank": look, "POST /api/name": rename, "GET /api/board": board,
   "GET /api/deals": deals,
   "GET /api/run": runLook, "POST /api/run/start": runStart, "POST /api/run/act": runAct,
 };
@@ -116,12 +120,12 @@ async function needBank(env, code) {
 // ---------- banks ----------
 
 async function make(req, env) {
-  if (!(await rateLimit(env, req, "new-bank", 5, 3600))) throw new Oops("Too many new banks from here. Try again later.", 429);
+  if (!(await rateLimit(env, req, "new-bank", NEW_BANKS_A_DAY, 86400))) throw new Oops("Too many new banks from here. Try again tomorrow.", 429);
   for (let i = 0; i < 5; i++) {
     const code = String(10000000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 90000000));
     const t = now();
     const r = await env.DB.prepare("INSERT OR IGNORE INTO drugwars_banks (code, balance, created_at, updated_at) VALUES (?, 0, ?, ?)").bind(code, t, t).run();
-    if (r.meta.changes === 1) return json({ code, balance: 0 });
+    if (r.meta.changes === 1) return json({ code, balance: 0, name: await giveName(env, code) });
   }
   throw new Oops("Something broke.", 500);
 }
@@ -131,7 +135,22 @@ async function look(req, env, url) {
   const code = codeOf(url.searchParams.get("code"));
   const b = await env.DB.prepare("SELECT balance FROM drugwars_banks WHERE code = ?").bind(code).first();
   if (!b) throw new Oops("No such bank.", 404);
-  return json({ code, balance: b.balance });
+  return json({ code, balance: b.balance, name: await giveName(env, code) });
+}
+
+async function rename(req, env) {
+  const code = codeOf((await json_(req)).code);
+  await needBank(env, code);
+  if (!(await rateLimit(env, req, "rename", 30, 3600))) throw new Oops("Too many tries. Try again later.", 429);
+  return json({ name: await giveName(env, code, { reroll: true }) });
+}
+
+// today's best runs (UTC day), by money at the end
+async function board(req, env) {
+  const { results } = await env.DB.prepare(
+    "SELECT b.name, d.money FROM drugwars_board d JOIN drugwars_banks b ON b.code = d.bank WHERE d.day = ? ORDER BY d.money DESC LIMIT 10")
+    .bind(int(now() / 86400)).all();
+  return json({ board: results });
 }
 
 async function deals(req, env, url) {
@@ -402,7 +421,7 @@ async function runAct(req, env) {
     case "collect": { // the cash from your deals that sold
       if (g.loc !== 0) throw new Oops("The bank is in the Bronx.");
       const x = Math.min(bank.owed, CAP - bank.balance);
-      if (x <= 0) return json(view(g, bank.balance, []));
+      if (x <= 0) return json(await view(env, g, bank.balance, []));
       fx.balance = bank.balance + x; fx.qty = x;
       fx.pre = { sql: `UPDATE drugwars_banks SET balance = balance + ?, owed = owed - ?, updated_at = ? WHERE code = ? AND owed >= ? AND balance + ? <= ? AND ${GUARD}`,
                  args: [x, x, now(), code, x, x, CAP, ...guardArgs] };
@@ -455,6 +474,7 @@ async function runAct(req, env) {
   }
   fx.amount = g.cash - cash0;
   if (died || ends) finish(g, fx.balance, msgs);
+  const over = g.state === "over";
 
   // ---- commit: [pre] -> run row -> log -> [post], each step only if the one before changed a row ----
   const t = now();
@@ -470,6 +490,12 @@ async function runAct(req, env) {
     "INSERT INTO drugwars_log (run, bank, move, kind, drug, qty, amount, cash_after, at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (SELECT changes()) = 1")
     .bind(g.id, code, g.move, fx.kind, fx.drug, fx.qty, fx.amount, g.cash, t));
   if (fx.post) stmts.push(env.DB.prepare(fx.post.sql).bind(...fx.post.args));
+  if (over) { // a finished run goes on today's board if it is that bank's best so far
+    stmts.push(env.DB.prepare(
+      `INSERT INTO drugwars_board (day, bank, money) SELECT ?, ?, ? WHERE (SELECT changes()) = 1
+       ON CONFLICT (day, bank) DO UPDATE SET money = MAX(money, excluded.money)`)
+      .bind(int(t / 86400), code, fx.balance + g.cash - g.debt));
+  }
   const res = await env.DB.batch(stmts);
   if (res[runIdx].meta.changes !== 1) throw new Oops(a === "buydeal" ? "Too late." : "Out of date.", 409);
 
