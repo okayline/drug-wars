@@ -39,6 +39,7 @@ const PUSH_FADE = 0.85;   // how much of a trade's push is left an hour later
 const PUSH_HOURS = 24;    // trades older than this no longer count
 const PUSH_CAP = 0.5;     // a price never moves more than this far from the street's own price
 const NEW_BANKS_A_DAY = 3; // per internet address
+const ABANDONED = 21600;  // a run with no move for this long (seconds) is over: its cash is gone, the bank is safe
 
 const MOVES = 30;         // a run ends when the move counter reaches 31, like the original's day 31
 const START_CASH = 2000, START_DEBT = 5000, START_COAT = 100;
@@ -299,9 +300,16 @@ const view = async (env, g, balance, msgs) => {
   };
 };
 
+// end this bank's live run if nobody has moved in it for ABANDONED seconds (no score, nothing on the board)
+async function closeAbandoned(env, code) {
+  await env.DB.prepare("UPDATE drugwars_runs SET state = 'over', pending = NULL, updated_at = ? WHERE bank = ? AND state = 'live' AND updated_at < ?")
+    .bind(now(), code, now() - ABANDONED).run();
+}
+
 async function runLook(req, env, url) {
   const code = codeOf(url.searchParams.get("code"));
   const bank = await needBank(env, code);
+  await closeAbandoned(env, code);
   const row = await env.DB.prepare("SELECT * FROM drugwars_runs WHERE bank = ? AND state = 'live'").bind(code).first();
   return json(row ? await view(env, parse(row), bank.balance, []) : { run: null, balance: bank.balance, msgs: [] });
 }
@@ -309,6 +317,7 @@ async function runLook(req, env, url) {
 async function runStart(req, env) {
   const code = codeOf((await json_(req)).code);
   const bank = await needBank(env, code);
+  await closeAbandoned(env, code);
   const live = await env.DB.prepare("SELECT * FROM drugwars_runs WHERE bank = ? AND state = 'live'").bind(code).first();
   if (live) return json(await view(env, parse(live), bank.balance, []));
   if (!(await rateLimit(env, req, "start-run", 30, 3600))) throw new Oops("Too many runs from here. Try again later.", 429);
@@ -347,6 +356,7 @@ async function runAct(req, env) {
   const b = await json_(req);
   const code = codeOf(b.code);
   if (!(await rateLimit(env, req, "run-act", 1500, 3600))) throw new Oops("Too many tries. Try again later.", 429);
+  await closeAbandoned(env, code);
   const row = await env.DB.prepare("SELECT * FROM drugwars_runs WHERE bank = ? AND state = 'live'").bind(code).first();
   if (!row) throw new Oops("No run going.", 404);
   const g = parse(row);
