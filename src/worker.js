@@ -199,16 +199,17 @@ const EVENTS_PER_PERIOD = 3;
 // The street in one city right now: what it sells at, what it buys back at, and the news. { buy[6], sell[6], news[] }
 async function street(env, city) {
   const period = int(now() / PERIOD);
-  const set = [], news = [];
+  const set = [], said = []; // per drug: the price an event set, and the event's news line
   for (let k = 0; k < EVENTS_PER_PERIOD; k++) {
     const e = EVENTS[int((await uniform(env, `event:${period}:${k}:kind`)) * EVENTS.length)];
     if (int((await uniform(env, `event:${period}:${k}:city`)) * 6) !== city) continue;
-    set[e.drug] = e.price(await uniform(env, `event:${period}:${k}:size`)); news.push(e.text);
+    set[e.drug] = e.price(await uniform(env, `event:${period}:${k}:size`)); said[e.drug] = e.text;
   }
   const { results } = await env.DB.prepare("SELECT period, drug, net FROM drugwars_trades WHERE city = ? AND period > ?").bind(city, period - PUSH_HOURS).all();
   const push = [0, 0, 0, 0, 0, 0];
   for (const r of results) push[r.drug] += r.net * PUSH_FADE ** (period - r.period);
   if (Math.random() < 0.02) await env.DB.prepare("DELETE FROM drugwars_trades WHERE period <= ?").bind(period - PUSH_HOURS).run();
+  const news = said.filter(Boolean); // one line per drug: the event that set its price
   const buy = [], sell = [];
   for (let d = 0; d < 6; d++) {
     const base = set[d] ?? BASE[d](await uniform(env, `price:${period}:${city}:${d}`));
