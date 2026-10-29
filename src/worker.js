@@ -1,4 +1,4 @@
-// Drugwar Worker (v2.2.0). The page is a static asset; /api/* comes here first.
+// Drugwar Worker (v2.3.0). The page is a static asset; /api/* comes here first.
 //
 //   POST /api/bank/new                   make a bank: { code, balance: 0 }
 //   GET  /api/bank?code=12345678         look a bank up: { code, balance, name }, or 404
@@ -92,10 +92,19 @@ async function sha256(text) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Fixed window per hashed IP and action. Returns true if allowed.
+// Who a limit counts against: the internet address, or for the 88x31 BBS (which plays every one of its users from its one
+// address) the BBS user number it sends in x-bbs-user, but only with the shared accounts key (env.ACCOUNTS_KEY, the same one
+// the BBS sends to scoundrel.exe). A wrong or missing key just counts against the address.
+const sameKey = (a, b) => a.length === b.length && [...a].reduce((x, c, i) => x | (c.charCodeAt(0) ^ b.charCodeAt(i)), 0) === 0;
+function who(req, env) {
+  const key = req.headers.get("x-accounts-key") || "", user = req.headers.get("x-bbs-user") || "";
+  if (env.ACCOUNTS_KEY && env.ACCOUNTS_KEY.length >= 16 && sameKey(key, env.ACCOUNTS_KEY) && /^[1-9][0-9]{0,6}$/.test(user)) return "bbs:" + user;
+  return "ip:" + (req.headers.get("cf-connecting-ip") || "unknown");
+}
+
+// Fixed window per hashed address (or BBS user, see who) and action. Returns true if allowed.
 async function rateLimit(env, req, action, limit, windowSecs) {
-  const ip = req.headers.get("cf-connecting-ip") || "unknown";
-  const key = action + ":" + (await sha256("ip:" + ip)).slice(0, 32);
+  const key = action + ":" + (await sha256(who(req, env))).slice(0, 32);
   const t = now(), windowStart = t - (t % windowSecs);
   const row = await env.DB.prepare(
     `INSERT INTO drugwars_rate_limits (key, window_start, count) VALUES (?, ?, 1)

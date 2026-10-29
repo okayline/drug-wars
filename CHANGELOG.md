@@ -2,6 +2,10 @@
 
 Newest first. Full details are kept privately.
 
+## v2.3.0 (Oct 29)
+- Added: Drugwar can be played in the 88x31 BBS. The BBS plays everyone from one internet address, so with the shared BBS key each BBS user gets their own limits (new banks, runs, moves) instead of sharing one address's.
+- Removed: nothing. Players on the web site count against their address as before.
+
 ## v2.2.0 (Oct 28)
 - Added: once an hour the game locks in every bank's newest history line in one overall fingerprint. If someone cuts lines off the end of a bank's history, the check now fails.
 - Added: the hourly fingerprints can be read from the server.
